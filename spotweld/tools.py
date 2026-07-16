@@ -1,0 +1,51 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+"""WorkSpaceTools exposing the interactive fit in the 3D viewport and the
+UV/Image editor toolbars. Registration is best-effort — tool API details have
+shifted between releases, and the operators remain reachable from the N-panel
+either way."""
+
+import bpy
+
+
+class _SpotWeldToolBase:
+    bl_context_mode = 'EDIT_MESH'
+    bl_label = "SpotWeld Fit"
+    bl_description = ("Click to hotspot-fit the selection interactively "
+                      "(wheel cycles rects, R re-rolls, RMB/Esc cancels)")
+    bl_icon = "ops.generic.select_box"
+    bl_widget = None
+    bl_keymap = (
+        ("uv.spotweld_fit_interactive",
+         {"type": 'LEFTMOUSE', "value": 'PRESS'}, None),
+    )
+
+
+class SPOTWELD_TOOL_fit_view3d(_SpotWeldToolBase, bpy.types.WorkSpaceTool):
+    bl_space_type = 'VIEW_3D'
+    bl_idname = "spotweld.fit_tool_view3d"
+
+
+class SPOTWELD_TOOL_fit_image(_SpotWeldToolBase, bpy.types.WorkSpaceTool):
+    bl_space_type = 'IMAGE_EDITOR'
+    bl_idname = "spotweld.fit_tool_image"
+
+
+_registered = []
+
+
+def register():
+    for cls in (SPOTWELD_TOOL_fit_view3d, SPOTWELD_TOOL_fit_image):
+        try:
+            bpy.utils.register_tool(cls, separator=True)
+            _registered.append(cls)
+        except Exception as ex:
+            print("SpotWeld: could not register tool %s: %s" % (cls.__name__, ex))
+
+
+def unregister():
+    for cls in reversed(_registered):
+        try:
+            bpy.utils.unregister_tool(cls)
+        except Exception:
+            pass
+    _registered.clear()
