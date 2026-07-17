@@ -12,7 +12,7 @@ import bpy
 from bpy.props import BoolProperty
 from mathutils import Matrix
 
-from . import core_atlas_suggest, core_geometry, core_match, ui
+from . import core_atlas_suggest, core_geometry, core_match, ops_fit, ui
 from .ops_rect_io import rects_to_scene
 
 PREVIEW_IMAGE_NAME = "SpotWeld_AtlasPreview"
@@ -71,10 +71,12 @@ def _preview_gpu(tex_w, tex_h, placements):
                 for i, (b, w, h, full, x, y) in enumerate(placements):
                     col = _bucket_color(i)
                     pts = ((x, y), (x + w, y), (x + w, y + h), (x, y + h))
-                    batch = batch_for_shader(shader, 'TRI_FAN', {"pos": pts})
+                    batch = batch_for_shader(shader, 'TRIS', {"pos": pts},
+                                             indices=((0, 1, 2), (0, 2, 3)))
                     shader.uniform_float("color", col)
                     batch.draw(shader)
-                    outline = batch_for_shader(shader, 'LINE_LOOP', {"pos": pts})
+                    outline = batch_for_shader(shader, 'LINE_STRIP',
+                                               {"pos": pts + (pts[0],)})
                     shader.uniform_float("color",
                                          (col[0] * 0.4, col[1] * 0.4, col[2] * 0.4, 1.0))
                     outline.draw(shader)
@@ -153,13 +155,19 @@ class SPOTWELD_OT_suggest_atlas(bpy.types.Operator):
 
         patches = []
         if context.mode == 'EDIT_MESH':
-            objects = getattr(context, "objects_in_mode_unique_data", None) or \
-                ([context.edit_object] if context.edit_object else [])
-            for obj in objects:
+            # Same face gathering as the Fit operators, so the suggestion is
+            # sized for exactly the patches a Fit would map (including the
+            # UV editor's sync-off selection semantics).
+            use_uv_select = ops_fit.uv_select_mode(context)
+            for obj in ops_fit.edit_mode_objects(context):
                 if obj is None or obj.type != 'MESH':
                     continue
                 bm = bmesh.from_edit_mesh(obj.data)
-                faces = [f for f in bm.faces if f.select and not f.hide]
+                uv_layer = bm.loops.layers.uv.active
+                if uv_layer is None and use_uv_select:
+                    continue
+                faces = core_geometry.get_target_faces(bm, uv_layer,
+                                                       use_uv_select)
                 patches.extend(_extract_patches(bm, faces, obj.matrix_world, st))
         else:
             for obj in context.selected_objects:
@@ -167,7 +175,8 @@ class SPOTWELD_OT_suggest_atlas(bpy.types.Operator):
                     continue
                 bm = bmesh.new()
                 bm.from_mesh(obj.data)
-                patches.extend(_extract_patches(bm, list(bm.faces),
+                faces = [f for f in bm.faces if not f.hide]
+                patches.extend(_extract_patches(bm, faces,
                                                 obj.matrix_world, st))
                 bm.free()
         if not patches:
@@ -188,7 +197,9 @@ class SPOTWELD_OT_suggest_atlas(bpy.types.Operator):
             rects.append(r)
         rects_to_scene(st, rects, self.replace)
 
-        # One full UV tile now spans tex_w px at `density` px/unit:
+        # One full 0-1 U span now covers tex_w px at `density` px/unit; the
+        # V axis of a non-square texture is corrected by tex_aspect during
+        # matching, so this single U-axis scale stays valid.
         st.world_scale = tex_w / density
 
         img = _make_preview_image(tex_w, tex_h, placements)
@@ -199,8 +210,10 @@ class SPOTWELD_OT_suggest_atlas(bpy.types.Operator):
                     area.tag_redraw()
 
         usage = 100.0 * min(used_h, tex_h) / max(tex_h, 1)
-        msg = ("%d patches -> %d rectangles, ~%d%% of a %dx%d atlas"
-               % (len(patches), len(buckets), round(usage), tex_w, tex_h))
+        msg = ("%d patches -> %d rectangles, ~%d%% of a %dx%d atlas, "
+               "world scale set to %.3g"
+               % (len(patches), len(buckets), round(usage), tex_w, tex_h,
+                  st.world_scale))
         if used_h > tex_h:
             self.report({'WARNING'}, msg + " — OVERFLOW: raise texture size "
                         "or lower texel density")

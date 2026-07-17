@@ -231,10 +231,12 @@ def layout_strip(ordered, shared, cyclic, mw, world_orient=True):
 
 
 def apply_rect_to_strip(strip, uv_layer, rect, inset_uv=(0.0, 0.0), rotated=False,
-                        snap_tiles=True, reverse_u=False):
+                        snap_tiles=True, reverse_u=False, tex_aspect=1.0):
     """Map a StripLayout into `rect`: cross-section fills the rect's band
     dimension, length tiles along the other axis at matching texel density.
-    snap_tiles nudges the scale so a whole number of rect-widths covers the run."""
+    snap_tiles nudges the scale so a whole number of rect-widths covers the
+    run; `tex_aspect` (tex_height / tex_width) keeps the density square on
+    non-square textures."""
     iu, iv = inset_uv
     if rotated:
         band = (rect.umin + iu, rect.umax - iu)
@@ -245,7 +247,11 @@ def apply_rect_to_strip(strip, uv_layer, rect, inset_uv=(0.0, 0.0), rotated=Fals
     band_h = max(band[1] - band[0], 1e-6)
     tile_w = max(tile[1] - tile[0], 1e-6)
 
-    uv_per_world = band_h / strip.avg_width
+    # One UV unit spans different px counts on U and V of a non-square
+    # texture; convert the band-axis density to the tiling axis.
+    tex_aspect = max(tex_aspect, 1e-9)
+    uv_per_world = (band_h / strip.avg_width) * \
+        (tex_aspect if not rotated else 1.0 / tex_aspect)
     total_uv = strip.total_len * uv_per_world
     if snap_tiles and total_uv > 1e-9:
         k = max(1, round(total_uv / tile_w))
@@ -269,10 +275,12 @@ def island_projection(faces, mw):
     """World-oriented planar projection of an island onto its average normal
     plane (world up projects to +Y of the plane basis).
     Returns (loop -> (x, y) dict, (minx, miny, width, height))."""
-    m3 = mw.to_3x3()
+    # Normals transform by the inverse-transpose, not the plain 3x3 —
+    # otherwise non-uniform object scale tilts the projection plane.
+    n3 = mw.to_3x3().inverted_safe().transposed()
     nrm = Vector((0.0, 0.0, 0.0))
     for f in faces:
-        nrm += (m3 @ f.normal) * f.calc_area()
+        nrm += (n3 @ f.normal) * f.calc_area()
     if nrm.length < 1e-9:
         nrm = Vector((0.0, 0.0, 1.0))
     nrm.normalize()

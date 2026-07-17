@@ -108,6 +108,41 @@ def test_rank_islands():
     assert all(c.rect.alt for c in cands)
 
 
+def test_rank_no_flip_orientation():
+    # Orientation-free but flip disallowed: a mismatched, non-rotatable rect
+    # must score worse than a matched-orientation rect instead of winning
+    # via the orientation-agnostic posaspect and being applied unrotated.
+    rects = [cm.Rect(0.0, 0.0, 0.25, 0.5),    # 0: tall 1:2, no rotate flag
+             cm.Rect(0.25, 0.0, 0.75, 0.25)]  # 1: wide 2:1
+    cands = cm.rank_rects(2.0, 0.125, rects, 1.0,
+                          world_orient=False, allow_flip=False)
+    assert cands[0].index == 1 and not cands[0].swap, cands
+    assert cands[1].aspect_score > cands[0].aspect_score, cands
+    # with flip allowed the tall rect ties again, via swap
+    cands = cm.rank_rects(2.0, 0.125, rects, 1.0,
+                          world_orient=False, allow_flip=True)
+    assert {c.index for c in cands[:2]} == {0, 1}
+    swap_of = {c.index: c.swap for c in cands}
+    assert swap_of[0] is True and swap_of[1] is False
+
+
+def test_rank_tex_aspect():
+    # 2048x1024 texture (tex_aspect = 0.5): a half-width full-height rect is
+    # physically square and must beat a UV-square (physically wide) rect for
+    # a square patch.
+    rects = [cm.Rect(0.0, 0.0, 0.5, 1.0),   # 0: 1024x1024 px -> square
+             cm.Rect(0.5, 0.0, 1.0, 0.5)]   # 1: 1024x512 px -> wide 2:1
+    cands = cm.rank_rects(1.0, 1.0, rects, 1.0, tex_aspect=0.5)
+    assert cands[0].index == 0, cands
+    # strip banding: on the same texture a rect of UV height 0.125 spans
+    # 128 px; a strip 128 px wide at scale=1 (2048 px/tile) should match it
+    # over a rect of UV height 0.0625 (64 px)
+    rects = [cm.Rect(0.0, 0.0, 1.0, 0.125),
+             cm.Rect(0.0, 0.5, 1.0, 0.5625)]
+    cands = cm.rank_strip_rects(128.0 / 2048.0, rects, 1.0, tex_aspect=0.5)
+    assert cands[0].index == 0, cands
+
+
 def test_choose_tie_reroll():
     rects = [cm.Rect(0.0, 0.0, 0.25, 0.25), cm.Rect(0.25, 0.0, 0.5, 0.25)]
     cands = cm.rank_rects(1.0, 0.0625, rects, 1.0)

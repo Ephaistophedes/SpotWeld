@@ -95,12 +95,16 @@ def _pool(rects, use_alt):
 
 
 def rank_rects(patch_aspect, patch_area_world, rects, scale,
-               world_orient=True, allow_flip=True, use_alt=False):
+               world_orient=True, allow_flip=True, use_alt=False,
+               tex_aspect=1.0):
     """Rank rects for an island patch: closest quantized aspect first, then
-    closest area (Hammer/DreamUV two-stage). `scale` = world units per UV tile.
+    closest area (Hammer/DreamUV two-stage). `scale` = world units per U tile;
+    `tex_aspect` (tex_height / tex_width) corrects rect aspects and areas to
+    physical proportions on non-square textures.
     Returns Candidates sorted best-first; swap=True means rotate the patch 90°
     into the rect."""
     patch_aspect = max(patch_aspect, 1e-6)
+    tex_aspect = max(tex_aspect, 1e-9)
     if world_orient:
         qp = math.log(quantize_aspect(patch_aspect))
     else:
@@ -109,16 +113,25 @@ def rank_rects(patch_aspect, patch_area_world, rects, scale,
 
     cands = []
     for i, r in _pool(rects, use_alt):
+        ra = r.aspect / tex_aspect  # physical (pixel-space) aspect
         if world_orient:
-            variants = [(math.log(quantize_aspect(r.aspect)), False)]
+            variants = [(math.log(quantize_aspect(ra)), False)]
             if r.rotate:
-                variants.append((math.log(quantize_aspect(1.0 / max(r.aspect, 1e-9))), True))
+                variants.append((math.log(quantize_aspect(1.0 / max(ra, 1e-9))), True))
         else:
-            mismatch = (r.aspect >= 1.0) != (patch_aspect >= 1.0)
-            swap = mismatch and (allow_flip or r.rotate)
-            variants = [(math.log(quantize_aspect(r.posaspect)), swap)]
+            mismatch = (ra >= 1.0) != (patch_aspect >= 1.0)
+            if mismatch and not (allow_flip or r.rotate):
+                # The rect can't be swapped into the patch's orientation, so
+                # score its directional aspect in the patch frame — the
+                # mismatch must count against it, not hide behind the
+                # orientation-agnostic posaspect.
+                rel = ra if patch_aspect >= 1.0 else 1.0 / max(ra, 1e-9)
+                variants = [(math.log(quantize_aspect(rel)), False)]
+            else:
+                pos = ra if ra >= 1.0 else 1.0 / max(ra, 1e-9)
+                variants = [(math.log(quantize_aspect(pos)), mismatch)]
         qa, swap = min(variants, key=lambda t: abs(t[0] - qp))
-        size_score = abs(math.log(max(r.area * scale * scale, 1e-12)) - p_area)
+        size_score = abs(math.log(max(r.area * scale * scale * tex_aspect, 1e-12)) - p_area)
         cands.append(Candidate(i, r, swap, abs(qa - qp), size_score))
     cands.sort(key=lambda c: (round(c.aspect_score, 9), round(c.size_score, 9), c.index))
     return cands
@@ -134,16 +147,18 @@ def choose(cands, rng, size_margin=0.0):
     return rng.choice(ties)
 
 
-def rank_strip_rects(width_world, rects, scale, use_alt=False):
-    """Rank rects for a quad strip: match the rect's short (band) dimension to
-    the strip's cross-section width; prefer tiling / full-width rects among
-    near-equal matches."""
+def rank_strip_rects(width_world, rects, scale, use_alt=False, tex_aspect=1.0):
+    """Rank rects for a quad strip: match the rect's band dimension to the
+    strip's cross-section width; prefer tiling / full-width rects among
+    near-equal matches. `tex_aspect` (tex_height / tex_width) converts V-axis
+    sizes to U-equivalent units on non-square textures."""
     width_world = max(width_world, 1e-9)
+    tex_aspect = max(tex_aspect, 1e-9)
     out = []
     for i, r in _pool(rects, use_alt):
-        variants = [(r.height, False)]
+        variants = [(r.height * tex_aspect, False)]  # band on V
         if r.rotate:
-            variants.append((r.width, True))
+            variants.append((r.width, True))         # band on U
         h_uv, rotated = min(
             variants, key=lambda t: abs(math.log(max(t[0], 1e-9) * scale / width_world)))
         score = abs(math.log(max(h_uv, 1e-9) * scale / width_world))

@@ -6,7 +6,7 @@ import random
 import bmesh
 import bpy
 
-from . import core_geometry, core_match, draw, ops_fit
+from . import core_geometry, draw, ops_fit
 
 
 class SPOTWELD_OT_grow_strip(bpy.types.Operator):
@@ -36,9 +36,7 @@ class SPOTWELD_OT_grow_strip(bpy.types.Operator):
             return False
 
         grown_any = False
-        objects = getattr(context, "objects_in_mode_unique_data", None) or \
-            ([context.edit_object] if context.edit_object else [])
-        for obj in objects:
+        for obj in ops_fit.edit_mode_objects(context):
             if obj is None or obj.type != 'MESH':
                 continue
             me = obj.data
@@ -102,7 +100,11 @@ class SPOTWELD_OT_fit_interactive(bpy.types.Operator):
         self._units, self._meshes = ops_fit.build_units(
             context, st, 'AUTO', event.alt)
         if not self._units:
-            self.report({'WARNING'}, "Nothing to fit — select faces first")
+            if not event.alt and all(r.alt for r in st.rects):
+                self.report({'WARNING'}, "All rectangles are alt-flagged — "
+                            "hold Alt while invoking or clear the Alt flags")
+            else:
+                self.report({'WARNING'}, "Nothing to fit — select faces first")
             return {'CANCELLED'}
 
         self._backup = []
@@ -137,18 +139,38 @@ class SPOTWELD_OT_fit_interactive(bpy.types.Operator):
         for me, _bm in self._meshes:
             bmesh.update_edit_mesh(me, loop_triangles=False, destructive=False)
         draw.state.highlight_indices = used
-        ops_fit.tag_redraw_editors(context)
+        draw.tag_redraw_editors(context)
+
+    def _restore(self):
+        try:
+            for uv_layer, backup in self._backup:
+                core_geometry.restore_uvs(backup, uv_layer)
+            for me, _bm in self._meshes:
+                bmesh.update_edit_mesh(me, loop_triangles=False,
+                                       destructive=False)
+        except ReferenceError:
+            pass  # mesh data invalidated behind us — nothing to restore
 
     def _cleanup(self, context):
         draw.state.strip_paths = []
         if context.area:
             context.area.header_text_set(None)
-        ops_fit.tag_redraw_editors(context)
+        draw.tag_redraw_editors(context)
+
+    def cancel(self, context):
+        # Blender force-terminates the modal (file load, window close):
+        # restore what we can and drop all overlay state.
+        self._restore()
+        draw.state.highlight_indices = set()
+        self._cleanup(context)
 
     def modal(self, context, event):
         if context.mode != 'EDIT_MESH':
+            # The edit bmesh is gone, so the applied preview can't be
+            # restored — keep it and end as a confirm, not a false cancel.
+            self.report({'INFO'}, "SpotWeld: edit mode ended — applied fit kept")
             self._cleanup(context)
-            return {'CANCELLED'}
+            return {'FINISHED'}
         if event.type in self._PASS_THROUGH:
             return {'PASS_THROUGH'}
         if event.type in ('WHEELUPMOUSE', 'WHEELDOWNMOUSE'):
@@ -166,14 +188,7 @@ class SPOTWELD_OT_fit_interactive(bpy.types.Operator):
             self._cleanup(context)
             return {'FINISHED'}
         if event.type in ('RIGHTMOUSE', 'ESC') and event.value == 'PRESS':
-            try:
-                for uv_layer, backup in self._backup:
-                    core_geometry.restore_uvs(backup, uv_layer)
-                for me, _bm in self._meshes:
-                    bmesh.update_edit_mesh(me, loop_triangles=False,
-                                           destructive=False)
-            except ReferenceError:
-                pass  # mesh data invalidated behind us — nothing to restore
+            self._restore()
             draw.state.highlight_indices = set()
             self._cleanup(context)
             return {'CANCELLED'}

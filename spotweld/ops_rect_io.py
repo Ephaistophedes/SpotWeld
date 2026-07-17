@@ -34,16 +34,6 @@ def rects_to_scene(st, rects, replace=True):
     draw.state.highlight_indices = set()
 
 
-def _tag_redraw(context, types=('IMAGE_EDITOR', 'VIEW_3D')):
-    wm = context.window_manager
-    if not wm:
-        return
-    for window in wm.windows:
-        for area in window.screen.areas:
-            if area.type in types:
-                area.tag_redraw()
-
-
 # ---------------------------------------------------------------------------
 # .rect import / export
 # ---------------------------------------------------------------------------
@@ -73,7 +63,7 @@ class SPOTWELD_OT_import_rect(bpy.types.Operator, ImportHelper):
             self.report({'ERROR'}, "No rectangles found in file")
             return {'CANCELLED'}
         rects_to_scene(st, rects, self.replace)
-        _tag_redraw(context)
+        draw.tag_redraw_editors(context)
         self.report({'INFO'}, "Imported %d rectangles (%d×%d px)"
                     % (len(rects), st.tex_width, st.tex_height))
         return {'FINISHED'}
@@ -94,14 +84,24 @@ class SPOTWELD_OT_export_rect(bpy.types.Operator, ExportHelper):
 
     def execute(self, context):
         st = context.scene.spotweld
-        text = core_match.export_rect(rects_from_scene(st), st.tex_width, st.tex_height)
+        rects = rects_from_scene(st)
+        text = core_match.export_rect(rects, st.tex_width, st.tex_height)
         try:
             with open(self.filepath, "w", encoding="utf-8", newline="\n") as fh:
                 fh.write(text)
         except OSError as ex:
             self.report({'ERROR'}, "Cannot write file: %s" % ex)
             return {'CANCELLED'}
-        self.report({'INFO'}, "Exported %d rectangles to %s" % (len(st.rects), self.filepath))
+        msg = "Exported %d rectangles to %s" % (len(rects), self.filepath)
+        # The Valve format expresses tiling only as full-width rects; any
+        # manually flagged narrower rect loses the flag on reimport.
+        lost = sum(1 for r in rects if r.tiling and not r.is_full_width())
+        if lost:
+            self.report({'WARNING'}, msg + " — %d Tiling flag(s) on "
+                        "non-full-width rects have no .rect representation "
+                        "and will be lost on reimport" % lost)
+        else:
+            self.report({'INFO'}, msg)
         return {'FINISHED'}
 
 
@@ -148,7 +148,7 @@ class SPOTWELD_OT_atlas_from_mesh(bpy.types.Operator):
             self.report({'ERROR'}, "No usable face UV rectangles on %s" % ob.name)
             return {'CANCELLED'}
         rects_to_scene(st, rects, self.replace)
-        _tag_redraw(context)
+        draw.tag_redraw_editors(context)
         self.report({'INFO'}, "Read %d rectangles from %s" % (len(rects), ob.name))
         return {'FINISHED'}
 
@@ -188,7 +188,7 @@ class SPOTWELD_OT_rect_add(bpy.types.Operator):
         item = st.rects.add()
         item.umin, item.vmin, item.umax, item.vmax = 0.0, 0.75, 0.25, 1.0
         st.active_rect_index = len(st.rects) - 1
-        _tag_redraw(context)
+        draw.tag_redraw_editors(context)
         return {'FINISHED'}
 
 
@@ -208,7 +208,7 @@ class SPOTWELD_OT_rect_remove(bpy.types.Operator):
         st.rects.remove(st.active_rect_index)
         st.active_rect_index = min(st.active_rect_index, len(st.rects) - 1)
         draw.state.highlight_indices = set()
-        _tag_redraw(context)
+        draw.tag_redraw_editors(context)
         return {'FINISHED'}
 
 

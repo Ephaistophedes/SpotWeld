@@ -6,7 +6,7 @@ import math
 
 import bpy
 from bpy.props import (BoolProperty, CollectionProperty, EnumProperty,
-                       FloatProperty, IntProperty, PointerProperty)
+                       FloatProperty, IntProperty)
 
 from .core_atlas_suggest import PRESET_TOLERANCE
 
@@ -123,8 +123,9 @@ class SPOTWELD_UL_rects(bpy.types.UIList):
     def draw_item(self, context, layout, data, item, icon, active_data,
                   active_propname, index):
         st = data
-        w = round((item.umax - item.umin) * st.tex_width)
-        h = round((item.vmax - item.vmin) * st.tex_height)
+        # abs(): min/max can be typed in either order; matching swaps them
+        w = round(abs(item.umax - item.umin) * st.tex_width)
+        h = round(abs(item.vmax - item.vmin) * st.tex_height)
         row = layout.row(align=True)
         row.label(text="%d:  %d × %d px" % (index, w, h))
         flags = row.row(align=True)

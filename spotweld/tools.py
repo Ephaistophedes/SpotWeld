@@ -46,6 +46,7 @@ def unregister():
     for cls in reversed(_registered):
         try:
             bpy.utils.unregister_tool(cls)
-        except Exception:
-            pass
+        except Exception as ex:
+            print("SpotWeld: could not unregister tool %s: %s"
+                  % (cls.__name__, ex))
     _registered.clear()

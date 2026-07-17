@@ -30,14 +30,19 @@ def get_inset_uv(st):
     return (st.inset_px / max(st.tex_width, 1), st.inset_px / max(st.tex_height, 1))
 
 
-def tag_redraw_editors(context):
-    wm = context.window_manager
-    if not wm:
-        return
-    for window in wm.windows:
-        for area in window.screen.areas:
-            if area.type in ('IMAGE_EDITOR', 'VIEW_3D'):
-                area.tag_redraw()
+def edit_mode_objects(context):
+    """Unique-data objects in (multi-object) edit mode."""
+    objects = getattr(context, "objects_in_mode_unique_data", None)
+    if objects:
+        return objects
+    return [context.edit_object] if context.edit_object else []
+
+
+def uv_select_mode(context):
+    """True when the UV editor's own sync-off selection should be used."""
+    space = context.space_data
+    return (space is not None and space.type == 'IMAGE_EDITOR'
+            and not context.scene.tool_settings.use_uv_select_sync)
 
 
 def build_units(context, st, mode, use_alt):
@@ -47,26 +52,26 @@ def build_units(context, st, mode, use_alt):
     if not rects:
         return [], []
 
-    space = context.space_data
-    use_uv_select = (space is not None and space.type == 'IMAGE_EDITOR'
-                     and not context.scene.tool_settings.use_uv_select_sync)
+    use_uv_select = uv_select_mode(context)
     angle = st.angle_limit if st.use_angle else None
     scale = st.world_scale
-
-    objects = getattr(context, "objects_in_mode_unique_data", None)
-    if not objects:
-        objects = [context.edit_object] if context.edit_object else []
+    tex_aspect = st.tex_height / max(st.tex_width, 1)
 
     units, meshes = [], []
-    for obj in objects:
+    for obj in edit_mode_objects(context):
         if obj is None or obj.type != 'MESH':
             continue
         me = obj.data
         bm = bmesh.from_edit_mesh(me)
-        uv_layer = bm.loops.layers.uv.verify()
+        # Look before verify(): creating a UV layer on a mesh that
+        # contributes no faces would permanently mutate co-edited meshes.
+        uv_layer = bm.loops.layers.uv.active
+        if uv_layer is None and use_uv_select:
+            continue  # no UVs — nothing can be UV-selected
         faces = core_geometry.get_target_faces(bm, uv_layer, use_uv_select)
         if not faces:
             continue
+        uv_layer = bm.loops.layers.uv.verify()
         # Keep (me, bm) paired: callers must hold the bm wrapper while units
         # live, or its GC invalidates every stored BMFace/loop reference.
         meshes.append((me, bm))
@@ -88,7 +93,8 @@ def build_units(context, st, mode, use_alt):
             if u.layout is not None:
                 u.kind = 'STRIP'
                 u.cands = core_match.rank_strip_rects(
-                    u.layout.avg_width, rects, scale, use_alt)
+                    u.layout.avg_width, rects, scale, use_alt,
+                    tex_aspect=tex_aspect)
             else:
                 if mode == 'STRIP':
                     continue
@@ -98,7 +104,8 @@ def build_units(context, st, mode, use_alt):
                 u.area = sum(core_geometry.face_world_area(f, mw) for f in island)
                 u.cands = core_match.rank_rects(
                     u.aspect, u.area, rects, scale,
-                    st.world_orient, st.allow_flip, use_alt)
+                    st.world_orient, st.allow_flip, use_alt,
+                    tex_aspect=tex_aspect)
             if u.cands:
                 units.append(u)
     return units, meshes
@@ -109,7 +116,8 @@ def apply_unit(u, cand, st, rng, inset_uv, reverse_strips=False):
         core_geometry.apply_rect_to_strip(
             u.layout, u.uv_layer, cand.rect, inset_uv,
             rotated=cand.rotated, snap_tiles=st.snap_tiles,
-            reverse_u=reverse_strips)
+            reverse_u=reverse_strips,
+            tex_aspect=st.tex_height / max(st.tex_width, 1))
         return
     rot_q = 1 if cand.swap else 0
     mirror = False
@@ -160,9 +168,13 @@ class SPOTWELD_OT_fit(bpy.types.Operator):
             return {'CANCELLED'}
         units, meshes = build_units(context, st, self.mode, self.use_alt)
         if not units:
-            self.report({'WARNING'}, "Nothing to fit — select faces first"
-                        if self.mode != 'STRIP'
-                        else "No quad strips in the selection")
+            if not self.use_alt and all(r.alt for r in st.rects):
+                self.report({'WARNING'}, "All rectangles are alt-flagged — "
+                            "hold Alt while fitting or clear the Alt flags")
+            else:
+                self.report({'WARNING'}, "Nothing to fit — select faces first"
+                            if self.mode != 'STRIP'
+                            else "No quad strips in the selection")
             return {'CANCELLED'}
 
         inset_uv = get_inset_uv(st)
@@ -181,7 +193,7 @@ class SPOTWELD_OT_fit(bpy.types.Operator):
         for me, _bm in meshes:
             bmesh.update_edit_mesh(me)
         draw.state.highlight_indices = used
-        tag_redraw_editors(context)
+        draw.tag_redraw_editors(context)
         self.report({'INFO'}, "Fitted %d patches (%d strips)" % (len(units), strips))
         return {'FINISHED'}
 
