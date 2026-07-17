@@ -134,7 +134,7 @@ class SPOTWELD_OT_fit_interactive(bpy.types.Operator):
             rng = random.Random("spotweld-modal:%d:%d" % (self._variation, k))
             ops_fit.apply_unit(u, cand, st, rng, inset_uv)
             used.add(cand.index)
-        for me in self._meshes:
+        for me, _bm in self._meshes:
             bmesh.update_edit_mesh(me, loop_triangles=False, destructive=False)
         draw.state.highlight_indices = used
         ops_fit.tag_redraw_editors(context)
@@ -169,7 +169,7 @@ class SPOTWELD_OT_fit_interactive(bpy.types.Operator):
             try:
                 for uv_layer, backup in self._backup:
                     core_geometry.restore_uvs(backup, uv_layer)
-                for me in self._meshes:
+                for me, _bm in self._meshes:
                     bmesh.update_edit_mesh(me, loop_triangles=False,
                                            destructive=False)
             except ReferenceError:

@@ -19,8 +19,10 @@ MODE_ITEMS = (
 
 
 class Unit:
-    """One fittable patch (island or strip) with its ranked rect candidates."""
-    __slots__ = ("kind", "obj", "uv_layer", "faces", "layout",
+    """One fittable patch (island or strip) with its ranked rect candidates.
+    Holds its source BMesh wrapper: if that Python object is garbage-collected,
+    every stored BMFace/loop reference is invalidated (ReferenceError)."""
+    __slots__ = ("kind", "obj", "bm", "uv_layer", "faces", "layout",
                  "coords", "bbox", "aspect", "area", "cands")
 
 
@@ -65,12 +67,15 @@ def build_units(context, st, mode, use_alt):
         faces = core_geometry.get_target_faces(bm, uv_layer, use_uv_select)
         if not faces:
             continue
-        meshes.append(me)
+        # Keep (me, bm) paired: callers must hold the bm wrapper while units
+        # live, or its GC invalidates every stored BMFace/loop reference.
+        meshes.append((me, bm))
         mw = obj.matrix_world
         for island in core_geometry.split_islands(
                 faces, st.use_seams, st.use_sharp, angle):
             u = Unit()
             u.obj = obj
+            u.bm = bm
             u.uv_layer = uv_layer
             u.faces = island
             u.layout = None
@@ -173,7 +178,7 @@ class SPOTWELD_OT_fit(bpy.types.Operator):
             apply_unit(u, cand, st, rng, inset_uv, self.reverse_strips)
             used.add(cand.index)
 
-        for me in meshes:
+        for me, _bm in meshes:
             bmesh.update_edit_mesh(me)
         draw.state.highlight_indices = used
         tag_redraw_editors(context)
