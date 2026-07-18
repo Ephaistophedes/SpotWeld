@@ -33,8 +33,9 @@ COL_NORMAL = (0.85, 0.85, 0.85, 0.55)
 COL_TILING = (0.30, 0.85, 1.00, 0.85)
 COL_ALT = (1.00, 0.60, 0.20, 0.85)
 COL_ACTIVE = (1.00, 1.00, 1.00, 1.00)
-COL_HIGHLIGHT = (1.00, 0.85, 0.20, 1.00)
-COL_HIGHLIGHT_FILL = (1.00, 0.85, 0.20, 0.15)
+COL_HIGHLIGHT = (1.00, 1.00, 1.00, 1.00)
+COL_HIGHLIGHT_FILL = (1.00, 1.00, 1.00, 0.40)
+HIGHLIGHT_LINE_WIDTH = 3.0  # clamps to 1 where wide lines are unsupported
 COL_STRIP_PATH = (0.25, 1.00, 0.55, 0.90)
 
 
@@ -121,7 +122,12 @@ def _draw_uv_overlay():
                     fill.draw(shader)
                 col = _rect_color(r, i, st.active_rect_index)
                 shader.uniform_float("color", col[:3] + (col[3] * opacity,))
-                outline.draw(shader)
+                if i in state.highlight_indices:
+                    gpu.state.line_width_set(HIGHLIGHT_LINE_WIDTH)
+                    outline.draw(shader)
+                    gpu.state.line_width_set(1.0)
+                else:
+                    outline.draw(shader)
         for i, r in enumerate(st.rects):
             if (r.umax - r.umin) * sx > 26.0:
                 col = _rect_color(r, i, st.active_rect_index)
