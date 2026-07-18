@@ -42,7 +42,10 @@ Viewport and the UV/Image Editor.
    the next click; view navigation and selection still work meanwhile) or the
    *SpotWeld Assign* toolbar tool for repeated picks.
    Each rect has an overlay fill color (swatch in the list); *Color Fills*
-   toggles the fills and *Opacity* fades the whole overlay.
+   toggles the fills, *Opacity* fades the whole overlay, and the refresh
+   button re-rolls all colors (evenly spread hues; *Seed* in the redo panel
+   re-rolls again). **Double-click** a rectangle in the UV editor to make it
+   the active one in the list.
 5. **Atlas Prediction (optional)** — before a texture exists, *Suggest Atlas*
    measures the selection, clusters islands/strips into reusable rectangle
    buckets (Lean / Balanced / High Fidelity economy presets, or a custom

@@ -190,6 +190,8 @@ class _SpotWeldPanelMixin:
         row.active = st.show_overlay
         row.prop(st, "overlay_fill", toggle=True)
         row.prop(st, "overlay_opacity", slider=True)
+        row.operator("spotweld.rect_colors_randomize", text="",
+                     icon='FILE_REFRESH')
 
         box = layout.box()
         box.label(text="Fit", icon='UV')

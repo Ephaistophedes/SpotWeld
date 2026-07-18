@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """WorkSpaceTools exposing the interactive fit in the 3D viewport and the
-UV/Image editor toolbars. Registration is best-effort — tool API details have
+UV/Image editor toolbars, plus the addon keymap (double-click selects the
+rect under the cursor). Registration is best-effort — tool API details have
 shifted between releases, and the operators remain reachable from the N-panel
 either way."""
 
@@ -48,6 +49,7 @@ class SPOTWELD_TOOL_pick_image(bpy.types.WorkSpaceTool):
 
 
 _registered = []
+_keymaps = []
 
 
 def register():
@@ -58,9 +60,23 @@ def register():
             _registered.append(cls)
         except Exception as ex:
             print("SpotWeld: could not register tool %s: %s" % (cls.__name__, ex))
+    # may be None (background mode / custom builds)
+    kc = bpy.context.window_manager.keyconfigs.addon
+    if kc:
+        km = kc.keymaps.new(name="UV Editor", space_type='EMPTY',
+                            region_type='WINDOW')
+        kmi = km.keymap_items.new("uv.spotweld_select_rect",
+                                  'LEFTMOUSE', 'DOUBLE_CLICK')
+        _keymaps.append((km, kmi))
 
 
 def unregister():
+    for km, kmi in _keymaps:
+        try:
+            km.keymap_items.remove(kmi)
+        except Exception as ex:
+            print("SpotWeld: could not remove keymap item: %s" % ex)
+    _keymaps.clear()
     for cls in reversed(_registered):
         try:
             bpy.utils.unregister_tool(cls)

@@ -146,6 +146,38 @@ def _image_editor_region(window, mx, my):
     return None
 
 
+class SPOTWELD_OT_select_rect(bpy.types.Operator):
+    """Bound to double-click in the UV editor (addon keymap in tools.py)."""
+    bl_idname = "uv.spotweld_select_rect"
+    bl_label = "Select Rect"
+    bl_description = "Make the rectangle under the cursor the active one"
+    bl_options = {'INTERNAL'}
+
+    @classmethod
+    def poll(cls, context):
+        st = getattr(context.scene, "spotweld", None)
+        return (st is not None and len(st.rects) > 0
+                and context.space_data is not None
+                and context.space_data.type == 'IMAGE_EDITOR')
+
+    def invoke(self, context, event):
+        st = context.scene.spotweld
+        region = context.region
+        # Pass misses through: with the overlay hidden or empty space
+        # double-clicked, whatever else is bound still runs.
+        if (not st.show_overlay or region is None
+                or region.type != 'WINDOW'):
+            return {'PASS_THROUGH'}
+        u, v = region.view2d.region_to_view(
+            event.mouse_region_x, event.mouse_region_y)
+        idx = core_match.pick_rect_at(st.rects, u, v)
+        if idx < 0:
+            return {'PASS_THROUGH'}
+        st.active_rect_index = idx
+        draw.tag_redraw_editors(context)
+        return {'FINISHED'}
+
+
 class SPOTWELD_OT_pick_rect(bpy.types.Operator):
     bl_idname = "uv.spotweld_pick_rect"
     bl_label = "Assign Rect (Click)"
@@ -317,4 +349,4 @@ class SPOTWELD_OT_fit(bpy.types.Operator):
         return {'FINISHED'}
 
 
-classes = (SPOTWELD_OT_fit, SPOTWELD_OT_pick_rect)
+classes = (SPOTWELD_OT_fit, SPOTWELD_OT_pick_rect, SPOTWELD_OT_select_rect)

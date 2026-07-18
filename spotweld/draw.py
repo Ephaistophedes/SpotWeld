@@ -38,10 +38,11 @@ COL_HIGHLIGHT_FILL = (1.00, 0.85, 0.20, 0.15)
 COL_STRIP_PATH = (0.25, 1.00, 0.55, 0.90)
 
 
-def palette_color(index):
-    """Distinct, stable RGB for rect `index` (golden-ratio hue walk)."""
-    hue = (index * 0.61803398875) % 1.0
-    return colorsys.hsv_to_rgb(hue, 0.55, 0.95)
+def palette_color(index, offset=0.0, sat=0.55, val=0.95):
+    """Distinct, stable RGB for rect `index` (golden-ratio hue walk).
+    `offset` rotates the whole palette; sat/val allow per-rect jitter."""
+    hue = (offset + index * 0.61803398875) % 1.0
+    return colorsys.hsv_to_rgb(hue, sat, val)
 
 
 def tag_redraw_editors(context):

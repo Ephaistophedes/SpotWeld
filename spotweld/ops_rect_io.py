@@ -2,8 +2,10 @@
 """Rect atlas I/O operators: Valve .rect import/export, DreamUV atlas-mesh
 import, texture-size sync, and manual rect list editing."""
 
+import random
+
 import bpy
-from bpy.props import BoolProperty, StringProperty
+from bpy.props import BoolProperty, IntProperty, StringProperty
 from bpy_extras.io_utils import ExportHelper, ImportHelper
 
 from . import core_match, draw
@@ -194,6 +196,43 @@ class SPOTWELD_OT_rect_add(bpy.types.Operator):
         return {'FINISHED'}
 
 
+class SPOTWELD_OT_rect_colors_randomize(bpy.types.Operator):
+    bl_idname = "spotweld.rect_colors_randomize"
+    bl_label = "Randomize Colors"
+    bl_description = ("Give every rectangle a fresh random overlay color "
+                      "(evenly spread hues; fill alpha is kept). Re-roll "
+                      "from the redo panel's Seed")
+    bl_options = {'REGISTER', 'UNDO'}
+
+    seed: IntProperty(
+        name="Seed", default=0, min=0,
+        description="Random seed for the color set")
+
+    @classmethod
+    def poll(cls, context):
+        st = getattr(context.scene, "spotweld", None)
+        return st is not None and len(st.rects) > 0
+
+    def invoke(self, context, event):
+        self.seed = random.randrange(1 << 16)
+        return self.execute(context)
+
+    def execute(self, context):
+        st = context.scene.spotweld
+        rng = random.Random(self.seed)
+        # Rotate the golden-ratio palette by a random offset and jitter
+        # saturation/value per rect: colors stay evenly spread (no two
+        # neighbors alike) while every roll looks different.
+        offset = rng.random()
+        for i, r in enumerate(st.rects):
+            rgb = draw.palette_color(i, offset,
+                                     sat=0.40 + 0.40 * rng.random(),
+                                     val=0.70 + 0.30 * rng.random())
+            r.color = rgb + (r.color[3],)
+        draw.tag_redraw_editors(context)
+        return {'FINISHED'}
+
+
 class SPOTWELD_OT_rect_remove(bpy.types.Operator):
     bl_idname = "spotweld.rect_remove"
     bl_label = "Remove Rectangle"
@@ -221,4 +260,5 @@ classes = (
     SPOTWELD_OT_tex_from_image,
     SPOTWELD_OT_rect_add,
     SPOTWELD_OT_rect_remove,
+    SPOTWELD_OT_rect_colors_randomize,
 )
