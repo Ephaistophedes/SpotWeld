@@ -57,16 +57,6 @@ class Rect:
         """Directional aspect (width/height); >1 wide, <1 tall."""
         return self.width / max(self.height, 1e-9)
 
-    @property
-    def posaspect(self):
-        """Orientation-independent aspect magnitude, always >= 1."""
-        a = self.aspect
-        return a if a >= 1.0 else 1.0 / max(a, 1e-9)
-
-    @property
-    def short_side(self):
-        return min(self.width, self.height)
-
     def is_full_width(self):
         return self.umin <= FULL_WIDTH_TOL and self.umax >= 1.0 - FULL_WIDTH_TOL
 
