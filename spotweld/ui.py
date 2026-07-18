@@ -71,6 +71,14 @@ class SpotWeldSettings(bpy.types.PropertyGroup):
         name="Snap To Whole Tiles", default=True,
         description="Nudge strip tiling so a whole number of rectangle widths "
                     "covers the run, aligning both ends with the rect border")
+    preserve_uvs: BoolProperty(
+        name="Keep Existing UVs", default=False,
+        description="Place without re-unwrapping: move and scale each "
+                    "island's current UV layout into the rectangle instead "
+                    "of projecting fresh UVs. Everything places island-style "
+                    "(no strip re-tiling) and random rotation/mirroring is "
+                    "skipped; islands with degenerate UVs fall back to "
+                    "projection")
 
     use_seams: BoolProperty(
         name="Seams", default=True,
@@ -202,6 +210,7 @@ class _SpotWeldPanelMixin:
         col.prop(st, "inset_px")
         col.prop(st, "match_margin")
         col.prop(st, "snap_tiles")
+        col.prop(st, "preserve_uvs")
         col = box.column(align=True)
         col.label(text="Patch Borders:")
         row = col.row(align=True)

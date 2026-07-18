@@ -21,9 +21,11 @@ MODE_ITEMS = (
 class Unit:
     """One fittable patch (island or strip) with its ranked rect candidates.
     Holds its source BMesh wrapper: if that Python object is garbage-collected,
-    every stored BMFace/loop reference is invalidated (ReferenceError)."""
+    every stored BMFace/loop reference is invalidated (ReferenceError).
+    `preserved` marks coords taken from the existing UV layout rather than a
+    projection (Keep Existing UVs)."""
     __slots__ = ("kind", "obj", "bm", "uv_layer", "faces", "layout",
-                 "coords", "bbox", "aspect", "area", "cands")
+                 "coords", "bbox", "aspect", "area", "cands", "preserved")
 
 
 def get_inset_uv(st):
@@ -56,6 +58,11 @@ def build_units(context, st, mode, use_alt):
     angle = st.angle_limit if st.use_angle else None
     scale = st.world_scale
     tex_aspect = st.tex_height / max(st.tex_width, 1)
+    preserve = st.preserve_uvs
+    if preserve:
+        # Keeping existing UVs implies island-style placement: strip
+        # re-parametrization would rebuild the very layout it must preserve.
+        mode = 'ISLAND'
 
     units, meshes = [], []
     for obj in edit_mode_objects(context):
@@ -84,6 +91,7 @@ def build_units(context, st, mode, use_alt):
             u.uv_layer = uv_layer
             u.faces = island
             u.layout = None
+            u.preserved = False
 
             if mode in ('AUTO', 'STRIP'):
                 det = core_geometry.detect_strip(island)
@@ -99,8 +107,19 @@ def build_units(context, st, mode, use_alt):
                 if mode == 'STRIP':
                     continue
                 u.kind = 'ISLAND'
-                u.coords, u.bbox = core_geometry.island_projection(island, mw)
-                u.aspect = u.bbox[2] / u.bbox[3]
+                u.coords = None
+                if preserve:
+                    u.coords, u.bbox = core_geometry.island_uv_bounds(
+                        island, uv_layer)
+                    if u.coords is not None:
+                        u.preserved = True
+                        # UV-space aspect -> physical, same frame the rects
+                        # are ranked in
+                        u.aspect = (u.bbox[2] / u.bbox[3]) / tex_aspect
+                if u.coords is None:  # normal path or degenerate-UV fallback
+                    u.coords, u.bbox = core_geometry.island_projection(
+                        island, mw)
+                    u.aspect = u.bbox[2] / u.bbox[3]
                 u.area = sum(core_geometry.face_world_area(f, mw) for f in island)
                 u.cands = core_match.rank_rects(
                     u.aspect, u.area, rects, scale,
@@ -121,16 +140,19 @@ def apply_unit(u, cand, st, rng, inset_uv, reverse_strips=False):
         return
     rot_q = 1 if cand.swap else 0
     mirror = False
-    is_square = core_match.quantize_aspect(
-        max(u.aspect, 1.0 / max(u.aspect, 1e-9))) == 1.0
-    if not st.world_orient and is_square:
-        rot_q = (rot_q + rng.randrange(4)) % 4
-        mirror = rng.random() < 0.5
-    if cand.rect.reflect and rng.random() < 0.5:
-        mirror = not mirror
+    if not u.preserved:
+        # random spins/mirrors would defeat Keep Existing UVs; the swap
+        # rotation above stays — it is what fits the layout into the rect
+        is_square = core_match.quantize_aspect(
+            max(u.aspect, 1.0 / max(u.aspect, 1e-9))) == 1.0
+        if not st.world_orient and is_square:
+            rot_q = (rot_q + rng.randrange(4)) % 4
+            mirror = rng.random() < 0.5
+        if cand.rect.reflect and rng.random() < 0.5:
+            mirror = not mirror
     core_geometry.apply_rect_to_island(
         u.faces, u.coords, u.bbox, u.uv_layer, cand.rect,
-        inset_uv, rot_q, mirror)
+        inset_uv, rot_q, mirror, rectify=not u.preserved)
 
 
 def _image_editor_region(window, mx, my):

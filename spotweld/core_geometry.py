@@ -306,6 +306,27 @@ def island_projection(faces, mw):
     return coords, (minx, miny, w, h)
 
 
+def island_uv_bounds(faces, uv_layer):
+    """Existing UV coords of an island, for placing without re-unwrapping.
+    Returns (loop -> (u, v) dict, (minu, minv, w, h)), or (None, None) when
+    the current layout is degenerate (zero width or height — e.g. a freshly
+    created UV layer) and a projection fallback is needed."""
+    coords = {}
+    us, vs = [], []
+    for f in faces:
+        for l in f.loops:
+            u, v = l[uv_layer].uv
+            coords[l] = (u, v)
+            us.append(u)
+            vs.append(v)
+    minu, minv = min(us), min(vs)
+    w = max(us) - minu
+    h = max(vs) - minv
+    if w < 1e-9 or h < 1e-9:
+        return None, None
+    return coords, (minu, minv, w, h)
+
+
 def face_world_area(f, mw):
     vs = [mw @ v.co for v in f.verts]
     area = 0.0
@@ -332,13 +353,16 @@ def rectify_quad_normalized(face, coords):
 
 
 def apply_rect_to_island(faces, coords, bbox, uv_layer, rect,
-                         inset_uv=(0.0, 0.0), rot_quarters=0, mirror_u=False):
+                         inset_uv=(0.0, 0.0), rot_quarters=0, mirror_u=False,
+                         rectify=True):
     """Normalize projected island coords to 0..1 and map into `rect`.
     rot_quarters applies 90° steps (proper rotations, never accidental
-    mirrors); mirror_u flips U afterwards."""
+    mirrors); mirror_u flips U afterwards. rectify=False keeps the given
+    coords' exact shape (preserve mode) instead of snapping a lone quad's
+    corners to the rect corners."""
     minx, miny, w, h = bbox
     normalized = None
-    if len(faces) == 1 and len(faces[0].verts) == 4:
+    if rectify and len(faces) == 1 and len(faces[0].verts) == 4:
         normalized = rectify_quad_normalized(faces[0], coords)
 
     iu, iv = inset_uv

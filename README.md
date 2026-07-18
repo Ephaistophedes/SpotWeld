@@ -33,7 +33,9 @@ Viewport and the UV/Image Editor.
    tiling strips, everything else fits island-style (closest quantized aspect,
    then closest area, random tie-break — re-roll with the *Variation* redo
    setting, hold **Alt** to use alt-flagged rects). *Grow Strip* extends the
-   selection along the active quad's face loop.
+   selection along the active quad's face loop. *Keep Existing UVs* places
+   without re-unwrapping: each island's current UV layout is only moved and
+   scaled into the rectangle (no strip re-tiling, no random spins).
 4. **Interactive Fit** (also on the toolbar): wheel cycles candidate
    rectangles, **R** re-rolls, **LMB** confirms, **RMB/Esc** cancels and
    restores the previous UVs.
