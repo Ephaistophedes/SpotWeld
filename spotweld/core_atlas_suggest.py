@@ -133,3 +133,116 @@ def shelf_pack(sized, tex_w, tex_h, pad):
     else:
         used = max(0, y - pad)
     return placements, used
+
+
+# ---------------------------------------------------------------------------
+# Density-free full-coverage packing (power-of-two trim-sheet layout)
+# ---------------------------------------------------------------------------
+
+def _pow2_round(v, lo, hi):
+    """Nearest power of two to v in log space, clamped to [lo, hi]."""
+    v = max(float(v), 1.0)
+    p = 2.0 ** round(math.log(v, 2.0))
+    return int(min(max(p, lo), hi))
+
+
+def _pow2_pieces(total):
+    """Exact descending power-of-two decomposition (binary digits), so any
+    leftover span partitions into clean po2 filler pieces."""
+    out = []
+    total = int(total)
+    while total > 0:
+        p = 1 << (total.bit_length() - 1)
+        out.append(p)
+        total -= p
+    return out
+
+
+def pack_full_atlas(buckets, tex_w, tex_h, min_px=8):
+    """Density-free layout: every bucket gets power-of-two pixel sizes, the
+    scale is chosen so the measured rects fill as much of the texture as
+    possible, and the exact remainder is partitioned into filler cells (per
+    row) and full-width trim bands — bucket None marks fillers. The result
+    covers the whole texture with no overlaps and no padding.
+
+    Returns (placements, used_h, px_per_world) in shelf_pack's tuple shape;
+    used_h > tex_h signals overflow even at minimum sizes (fillers omitted)."""
+    strips = [b for b in buckets if b.kind == "STRIP"]
+    islands = [b for b in buckets if b.kind == "ISLAND"]
+
+    def sizes_at(s):
+        band_hs = [(b, _pow2_round(b.short * s, min_px, tex_h)) for b in strips]
+        cells = [(b, _pow2_round(b.long * s, min_px, tex_w),
+                  _pow2_round(b.short * s, min_px, tex_h)) for b in islands]
+        cells.sort(key=lambda t: (-t[2], -t[1]))
+        return band_hs, cells
+
+    def rows_of(cells):
+        """Greedy rows of equal po2 height (row order follows the tallest-
+        first cell order). Returns [[row_h, [(b, w, h), ...], used_w], ...]."""
+        rows = []
+        for b, w, h in cells:
+            for row in rows:
+                if row[0] == h and row[2] + w <= tex_w:
+                    row[1].append((b, w, h))
+                    row[2] += w
+                    break
+            else:
+                rows.append([h, [(b, w, h)], w])
+        return rows
+
+    def used_height(s):
+        band_hs, cells = sizes_at(s)
+        return (sum(h for _b, h in band_hs)
+                + sum(r[0] for r in rows_of(cells)))
+
+    # Largest scale whose layout still fits the texture height. used_height
+    # is stepwise (po2 snapping) but non-decreasing overall; the search keeps
+    # `lo` on the last known-fitting scale.
+    dims = [b.short for b in strips]
+    for b in islands:
+        dims += [b.long, b.short]
+    smallest = max(min(dims), 1e-9)
+    lo = 1e-9  # everything clamps to min_px
+    if used_height(lo) > tex_h:
+        band_hs, cells = sizes_at(lo)
+        placements = []
+        y = 0
+        for b, h in band_hs:
+            placements.append((b, tex_w, h, True, 0, y))
+            y += h
+        for row_h, row_cells, _w in rows_of(cells):
+            x = 0
+            for b, w, h in row_cells:
+                placements.append((b, w, h, False, x, y))
+                x += w
+            y += row_h
+        return placements, y, lo
+    hi = 2.0 * max(tex_w, tex_h) / smallest  # smallest patch spans the atlas
+    for _ in range(64):
+        mid = 0.5 * (lo + hi)
+        if used_height(mid) <= tex_h:
+            lo = mid
+        else:
+            hi = mid
+
+    band_hs, cells = sizes_at(lo)
+    placements = []
+    y = 0
+    for b, h in band_hs:
+        placements.append((b, tex_w, h, True, 0, y))
+        y += h
+    for row_h, row_cells, used_w in rows_of(cells):
+        x = 0
+        for b, w, h in row_cells:
+            placements.append((b, w, h, False, x, y))
+            x += w
+        for piece in _pow2_pieces(tex_w - x):
+            placements.append((None, piece, row_h, False, x, y))
+            x += piece
+        y += row_h
+    used = y
+    for piece in _pow2_pieces(tex_h - y):
+        placements.append((None, tex_w, piece, True, 0, y))
+        y += piece
+    return placements, used, lo

@@ -53,7 +53,11 @@ Viewport and the UV/Image Editor.
    buckets (Lean / Balanced / High Fidelity economy presets, or a custom
    tolerance), packs a layout, fills the rect list, and renders a labeled
    preview image. It never touches real UVs; *Export* writes the result as an
-   ordinary `.rect`.
+   ordinary `.rect`. With *Use Texel Density* off, sizes snap to powers of
+   two and scale so the layout tiles the **entire** texture exactly — every
+   leftover becomes a filler rectangle or full-width trim band (perfect
+   trim-sheet coverage, padding ignored); the world scale is set from the
+   chosen packing scale either way.
 
 ## Strip mode
 

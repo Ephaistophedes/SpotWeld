@@ -106,6 +106,13 @@ class SpotWeldSettings(bpy.types.PropertyGroup):
                     "fills and labels)")
 
     # --- Atlas prediction (optional pre-pass) ---
+    use_texel_density: BoolProperty(
+        name="Use Texel Density", default=True,
+        description="Size suggested rectangles from the texel density target. "
+                    "When off, sizes snap to powers of two and scale so the "
+                    "suggestion fills the entire texture exactly — leftover "
+                    "space is partitioned into filler rectangles and "
+                    "full-width trims (padding is ignored)")
     texel_density: FloatProperty(
         name="Texel Density", default=256.0, min=1.0, soft_max=4096.0,
         description="Target texels per world unit for suggested rectangles")
@@ -253,7 +260,10 @@ class _SpotWeldSuggestMixin:
         layout = self.layout
         st = context.scene.spotweld
         col = layout.column(align=True)
-        col.prop(st, "texel_density")
+        col.prop(st, "use_texel_density")
+        sub = col.row()
+        sub.active = st.use_texel_density
+        sub.prop(st, "texel_density")
         row = layout.row(align=True)
         row.enabled = not st.use_custom_tolerance
         row.prop(st, "economy", expand=True)

@@ -82,7 +82,10 @@ def _preview_gpu(tex_w, tex_h, placements):
                     outline.draw(shader)
                     if w >= 48 and h >= 16:
                         label = "%d  %dx%d px" % (i, w, h)
-                        label += "  tile" if full else "  x%d" % len(b.members)
+                        if b is None:
+                            label += "  fill"
+                        else:
+                            label += "  tile" if full else "  x%d" % len(b.members)
                         size = min(26, max(11, int(h * 0.5)))
                         blf.size(0, size)
                         blf.color(0, 0.05, 0.05, 0.05, 0.9)
@@ -184,10 +187,16 @@ class SPOTWELD_OT_suggest_atlas(bpy.types.Operator):
             return {'CANCELLED'}
 
         buckets = core_atlas_suggest.cluster_patches(patches, tol)
-        sized, clamped = core_atlas_suggest.size_buckets(
-            buckets, density, tex_w, tex_h)
-        placements, used_h = core_atlas_suggest.shelf_pack(
-            sized, tex_w, tex_h, st.suggest_padding_px)
+        if st.use_texel_density:
+            sized, clamped = core_atlas_suggest.size_buckets(
+                buckets, density, tex_w, tex_h)
+            placements, used_h = core_atlas_suggest.shelf_pack(
+                sized, tex_w, tex_h, st.suggest_padding_px)
+        else:
+            placements, used_h, px_per_world = \
+                core_atlas_suggest.pack_full_atlas(buckets, tex_w, tex_h)
+            density = max(px_per_world, 1e-9)
+            clamped = False
 
         rects = []
         for b, w, h, full, x, y in placements:
@@ -210,14 +219,26 @@ class SPOTWELD_OT_suggest_atlas(bpy.types.Operator):
                     area.tag_redraw()
 
         usage = 100.0 * min(used_h, tex_h) / max(tex_h, 1)
-        msg = ("%d patches -> %d rectangles, ~%d%% of a %dx%d atlas, "
-               "world scale set to %.3g"
-               % (len(patches), len(buckets), round(usage), tex_w, tex_h,
-                  st.world_scale))
+        if st.use_texel_density:
+            msg = ("%d patches -> %d rectangles, ~%d%% of a %dx%d atlas, "
+                   "world scale set to %.3g"
+                   % (len(patches), len(buckets), round(usage), tex_w, tex_h,
+                      st.world_scale))
+        else:
+            n_fill = sum(1 for p in placements if p[0] is None)
+            msg = ("%d patches -> %d rectangles + %d fillers, full %dx%d "
+                   "coverage, world scale set to %.3g"
+                   % (len(patches), len(buckets), n_fill, tex_w, tex_h,
+                      st.world_scale))
         if used_h > tex_h:
-            self.report({'WARNING'}, msg + " — OVERFLOW: raise texture size "
-                        "or lower texel density")
-        elif clamped:
+            if st.use_texel_density:
+                msg += " — OVERFLOW: raise texture size or lower texel density"
+            else:
+                msg += (" — OVERFLOW: too many buckets even at minimum "
+                        "sizes; raise texture size or lower the tolerance")
+            self.report({'WARNING'}, msg)
+            return {'FINISHED'}
+        if clamped:
             self.report({'WARNING'}, msg + " (some patches were larger than "
                         "the texture and were clamped)")
         else:
