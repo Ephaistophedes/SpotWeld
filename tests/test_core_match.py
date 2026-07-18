@@ -5,6 +5,7 @@ Run with plain Python: python tests/test_core_match.py"""
 import os
 import random
 import sys
+import types
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), os.pardir, "spotweld"))
 
@@ -141,6 +142,22 @@ def test_rank_tex_aspect():
              cm.Rect(0.0, 0.5, 1.0, 0.5625)]
     cands = cm.rank_strip_rects(128.0 / 2048.0, rects, 1.0, tex_aspect=0.5)
     assert cands[0].index == 0, cands
+
+
+def test_pick_rect_at():
+    # rect 2 is a bare namespace with reversed corners: PropertyGroup rects
+    # don't normalize min/max, so pick_rect_at must do it itself
+    reversed_rect = types.SimpleNamespace(umin=0.9, vmin=0.6, umax=0.6, vmax=0.9)
+    rects = [cm.Rect(0.0, 0.0, 1.0, 1.0),        # 0: full atlas
+             cm.Rect(0.25, 0.25, 0.5, 0.5),      # 1: nested inside 0
+             reversed_rect]
+    # nested rect wins over the enclosing one (smallest containing)
+    assert cm.pick_rect_at(rects, 0.3, 0.3) == 1
+    assert cm.pick_rect_at(rects, 0.1, 0.1) == 0
+    assert cm.pick_rect_at(rects, 0.7, 0.7) == 2
+    # outside everything
+    assert cm.pick_rect_at(rects, 1.5, 0.5) == -1
+    assert cm.pick_rect_at([], 0.5, 0.5) == -1
 
 
 def test_choose_tie_reroll():

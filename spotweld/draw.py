@@ -2,6 +2,7 @@
 """GPU draw handlers: rectangle-grid overlay in the UV/Image editor and strip
 run paths in the 3D viewport (during the interactive tool)."""
 
+import colorsys
 import types
 
 import blf
@@ -35,6 +36,12 @@ COL_ACTIVE = (1.00, 1.00, 1.00, 1.00)
 COL_HIGHLIGHT = (1.00, 0.85, 0.20, 1.00)
 COL_HIGHLIGHT_FILL = (1.00, 0.85, 0.20, 0.15)
 COL_STRIP_PATH = (0.25, 1.00, 0.55, 0.90)
+
+
+def palette_color(index):
+    """Distinct, stable RGB for rect `index` (golden-ratio hue walk)."""
+    hue = (index * 0.61803398875) % 1.0
+    return colorsys.hsv_to_rgb(hue, 0.55, 0.95)
 
 
 def tag_redraw_editors(context):
@@ -89,6 +96,9 @@ def _draw_uv_overlay():
         sx = v2r(1.0, 0.0, clip=False)[0] - ox
         sy = v2r(0.0, 1.0, clip=False)[1] - oy
 
+        opacity = st.overlay_opacity
+        if opacity <= 0.0:
+            return
         shader = gpu.shader.from_builtin('UNIFORM_COLOR')
         items = _rect_batches(shader, st)
         gpu.state.blend_set('ALPHA')
@@ -98,17 +108,24 @@ def _draw_uv_overlay():
             gpu.matrix.scale((sx, sy))
             for i, r in enumerate(st.rects):
                 fill, outline = items[i]
-                if i in state.highlight_indices:
-                    shader.uniform_float("color", COL_HIGHLIGHT_FILL)
+                if st.overlay_fill and r.color[3] > 0.0:
+                    shader.uniform_float(
+                        "color", (r.color[0], r.color[1], r.color[2],
+                                  r.color[3] * opacity))
                     fill.draw(shader)
-                shader.uniform_float("color",
-                                     _rect_color(r, i, st.active_rect_index))
+                if i in state.highlight_indices:
+                    shader.uniform_float(
+                        "color", COL_HIGHLIGHT_FILL[:3]
+                        + (COL_HIGHLIGHT_FILL[3] * opacity,))
+                    fill.draw(shader)
+                col = _rect_color(r, i, st.active_rect_index)
+                shader.uniform_float("color", col[:3] + (col[3] * opacity,))
                 outline.draw(shader)
         for i, r in enumerate(st.rects):
             if (r.umax - r.umin) * sx > 26.0:
                 col = _rect_color(r, i, st.active_rect_index)
                 blf.size(0, 10)
-                blf.color(0, col[0], col[1], col[2], 1.0)
+                blf.color(0, col[0], col[1], col[2], opacity)
                 blf.position(0, ox + r.umin * sx + 4.0,
                              oy + r.vmax * sy - 13.0, 0.0)
                 blf.draw(0, str(i))

@@ -6,7 +6,7 @@ import math
 
 import bpy
 from bpy.props import (BoolProperty, CollectionProperty, EnumProperty,
-                       FloatProperty, IntProperty)
+                       FloatProperty, FloatVectorProperty, IntProperty)
 
 from .core_atlas_suggest import PRESET_TOLERANCE
 
@@ -29,6 +29,11 @@ class SpotWeldRect(bpy.types.PropertyGroup):
         name="Tiling", default=False,
         description="Trim region that tiles along its long axis (full-width "
                     "rects import as tiling automatically)")
+    color: FloatVectorProperty(
+        name="Color", subtype='COLOR', size=4, min=0.0, max=1.0,
+        default=(0.8, 0.8, 0.8, 0.35),
+        description="Overlay fill color for this rectangle (alpha = fill "
+                    "strength, scaled by the overlay opacity)")
 
 
 class SpotWeldSettings(bpy.types.PropertyGroup):
@@ -84,6 +89,13 @@ class SpotWeldSettings(bpy.types.PropertyGroup):
     show_overlay: BoolProperty(
         name="Show Rect Overlay", default=True,
         description="Draw the rectangle grid over the image in the UV editor")
+    overlay_fill: BoolProperty(
+        name="Color Fills", default=True,
+        description="Fill each rectangle with its own color in the overlay")
+    overlay_opacity: FloatProperty(
+        name="Opacity", default=1.0, min=0.0, max=1.0, subtype='FACTOR',
+        description="Overall opacity of the rectangle overlay (outlines, "
+                    "fills and labels)")
 
     # --- Atlas prediction (optional pre-pass) ---
     texel_density: FloatProperty(
@@ -130,6 +142,7 @@ class SPOTWELD_UL_rects(bpy.types.UIList):
         row.label(text="%d:  %d × %d px" % (index, w, h))
         flags = row.row(align=True)
         flags.alignment = 'RIGHT'
+        flags.prop(item, "color", text="")
         flags.prop(item, "rotate", text="", icon='FILE_REFRESH', emboss=False)
         flags.prop(item, "reflect", text="", icon='MOD_MIRROR', emboss=False)
         flags.prop(item, "alt", text="", icon='EVENT_ALT', emboss=False)
@@ -171,7 +184,12 @@ class _SpotWeldPanelMixin:
             row = sub.row(align=True)
             row.prop(r, "umax")
             row.prop(r, "vmax")
+            sub.prop(r, "color", text="Color")
         box.prop(st, "show_overlay")
+        row = box.row(align=True)
+        row.active = st.show_overlay
+        row.prop(st, "overlay_fill", toggle=True)
+        row.prop(st, "overlay_opacity", slider=True)
 
         box = layout.box()
         box.label(text="Fit", icon='UV')
@@ -199,6 +217,7 @@ class _SpotWeldPanelMixin:
         op.mode = 'ISLAND'
         op = row.operator("uv.spotweld_fit", text="Strips")
         op.mode = 'STRIP'
+        box.operator("uv.spotweld_pick_rect", icon='EYEDROPPER')
         box.operator("uv.spotweld_fit_interactive", icon='RESTRICT_SELECT_OFF')
         box.operator("mesh.spotweld_grow_strip", icon='SNAP_EDGE')
 

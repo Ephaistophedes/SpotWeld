@@ -30,6 +30,7 @@ def rects_to_scene(st, rects, replace=True):
         item.umax, item.vmax = r.umax, r.vmax
         item.rotate, item.reflect = r.rotate, r.reflect
         item.alt, item.tiling = r.alt, r.tiling
+        item.color = draw.palette_color(len(st.rects) - 1) + (item.color[3],)
     st.active_rect_index = min(st.active_rect_index, max(len(st.rects) - 1, 0))
     draw.state.highlight_indices = set()
 
@@ -187,6 +188,7 @@ class SPOTWELD_OT_rect_add(bpy.types.Operator):
         st = context.scene.spotweld
         item = st.rects.add()
         item.umin, item.vmin, item.umax, item.vmax = 0.0, 0.75, 0.25, 1.0
+        item.color = draw.palette_color(len(st.rects) - 1) + (item.color[3],)
         st.active_rect_index = len(st.rects) - 1
         draw.tag_redraw_editors(context)
         return {'FINISHED'}

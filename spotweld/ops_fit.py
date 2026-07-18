@@ -133,6 +133,125 @@ def apply_unit(u, cand, st, rng, inset_uv, reverse_strips=False):
         inset_uv, rot_q, mirror)
 
 
+def _image_editor_region(window, mx, my):
+    """The IMAGE_EDITOR WINDOW region under window-space mouse coords, or None."""
+    for area in window.screen.areas:
+        if area.type != 'IMAGE_EDITOR':
+            continue
+        for region in area.regions:
+            if (region.type == 'WINDOW'
+                    and region.x <= mx < region.x + region.width
+                    and region.y <= my < region.y + region.height):
+                return region
+    return None
+
+
+class SPOTWELD_OT_pick_rect(bpy.types.Operator):
+    bl_idname = "uv.spotweld_pick_rect"
+    bl_label = "Assign Rect (Click)"
+    bl_description = ("Map the selected faces onto the rectangle you click in "
+                      "the UV/Image editor. The view can still be navigated "
+                      "and the selection changed while waiting (RMB/Esc "
+                      "cancels)")
+    bl_options = {'REGISTER', 'UNDO'}
+
+    rect_index: IntProperty(
+        name="Rectangle", default=-1, min=-1,
+        description="Target rectangle index (-1 waits for a click)")
+    mode: EnumProperty(name="Mode", items=MODE_ITEMS, default='AUTO')
+
+    @classmethod
+    def poll(cls, context):
+        return context.mode == 'EDIT_MESH'
+
+    def invoke(self, context, event):
+        st = context.scene.spotweld
+        if not len(st.rects):
+            self.report({'ERROR'},
+                        "No hotspot rectangles — import a .rect or run Suggest Atlas")
+            return {'CANCELLED'}
+        space = context.space_data
+        region = context.region
+        if (space is not None and space.type == 'IMAGE_EDITOR'
+                and region is not None and region.type == 'WINDOW'
+                and event.type == 'LEFTMOUSE'):
+            # Toolbar-tool click straight on the UV editor: single-shot pick.
+            u, v = region.view2d.region_to_view(
+                event.mouse_region_x, event.mouse_region_y)
+            idx = core_match.pick_rect_at(st.rects, u, v)
+            if idx < 0:
+                self.report({'WARNING'}, "No rectangle under the cursor")
+                return {'CANCELLED'}
+            self.rect_index = idx
+            return self.execute(context)
+        # Panel button: go modal and wait for a click in any UV/Image editor.
+        context.window_manager.modal_handler_add(self)
+        context.window.cursor_modal_set('EYEDROPPER')
+        self.report({'INFO'},
+                    "Click a rectangle in the UV editor (RMB/Esc cancels)")
+        return {'RUNNING_MODAL'}
+
+    def modal(self, context, event):
+        if event.type in ('RIGHTMOUSE', 'ESC'):
+            context.window.cursor_modal_restore()
+            self.report({'INFO'}, "Assign cancelled")
+            return {'CANCELLED'}
+        if event.type == 'LEFTMOUSE' and event.value == 'PRESS':
+            region = _image_editor_region(
+                context.window, event.mouse_x, event.mouse_y)
+            if region is not None:
+                u, v = region.view2d.region_to_view(
+                    event.mouse_x - region.x, event.mouse_y - region.y)
+                idx = core_match.pick_rect_at(context.scene.spotweld.rects, u, v)
+                if idx < 0:
+                    self.report({'WARNING'},
+                                "No rectangle there — click a rectangle "
+                                "(RMB/Esc cancels)")
+                    return {'RUNNING_MODAL'}
+                context.window.cursor_modal_restore()
+                self.rect_index = idx
+                return self.execute(context)
+        # Everything else passes through so the view can be navigated and the
+        # face selection adjusted before picking.
+        return {'PASS_THROUGH'}
+
+    def cancel(self, context):
+        context.window.cursor_modal_restore()
+
+    def execute(self, context):
+        st = context.scene.spotweld
+        if not (0 <= self.rect_index < len(st.rects)):
+            self.report({'ERROR'}, "Rectangle index out of range")
+            return {'CANCELLED'}
+        target = st.rects[self.rect_index]
+        units, meshes = build_units(context, st, self.mode, target.alt)
+        if not units:
+            self.report({'WARNING'}, "Nothing to fit — select faces first")
+            return {'CANCELLED'}
+        inset_uv = get_inset_uv(st)
+        applied = 0
+        for k, u in enumerate(units):
+            cand = next((c for c in u.cands
+                         if c.index == self.rect_index), None)
+            if cand is None:
+                continue
+            rng = random.Random("spotweld:pick:%d" % k)
+            apply_unit(u, cand, st, rng, inset_uv)
+            applied += 1
+        if not applied:
+            self.report({'WARNING'}, "Selection could not be mapped to rect %d"
+                        % self.rect_index)
+            return {'CANCELLED'}
+        for me, _bm in meshes:
+            bmesh.update_edit_mesh(me)
+        st.active_rect_index = self.rect_index
+        draw.state.highlight_indices = {self.rect_index}
+        draw.tag_redraw_editors(context)
+        self.report({'INFO'}, "Assigned %d patch(es) to rect %d"
+                    % (applied, self.rect_index))
+        return {'FINISHED'}
+
+
 class SPOTWELD_OT_fit(bpy.types.Operator):
     bl_idname = "uv.spotweld_fit"
     bl_label = "SpotWeld Fit"
@@ -198,4 +317,4 @@ class SPOTWELD_OT_fit(bpy.types.Operator):
         return {'FINISHED'}
 
 
-classes = (SPOTWELD_OT_fit,)
+classes = (SPOTWELD_OT_fit, SPOTWELD_OT_pick_rect)

@@ -175,6 +175,22 @@ def choose_strip(cands, rng, size_margin=0.0):
     return rng.choice(ties)
 
 
+def pick_rect_at(rects, u, v):
+    """Index of the smallest rect containing UV point (u, v), or -1.
+    Smallest-first resolves overlaps in favor of nested/inner rects. Accepts
+    anything with umin/vmin/umax/vmax attributes (min/max may be reversed)."""
+    best = -1
+    best_area = None
+    for i, r in enumerate(rects):
+        umin, umax = min(r.umin, r.umax), max(r.umin, r.umax)
+        vmin, vmax = min(r.vmin, r.vmax), max(r.vmin, r.vmax)
+        if umin <= u <= umax and vmin <= v <= vmax:
+            area = (umax - umin) * (vmax - vmin)
+            if best_area is None or area < best_area:
+                best, best_area = i, area
+    return best
+
+
 # ---------------------------------------------------------------------------
 # Valve KeyValues .rect I/O
 # ---------------------------------------------------------------------------

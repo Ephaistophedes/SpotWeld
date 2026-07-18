@@ -37,6 +37,12 @@ Viewport and the UV/Image Editor.
 4. **Interactive Fit** (also on the toolbar): wheel cycles candidate
    rectangles, **R** re-rolls, **LMB** confirms, **RMB/Esc** cancels and
    restores the previous UVs.
+   **Assign Rect (Click)** maps the selection to a rectangle you click in the
+   UV editor instead of the closest match — from the panel button (waits for
+   the next click; view navigation and selection still work meanwhile) or the
+   *SpotWeld Assign* toolbar tool for repeated picks.
+   Each rect has an overlay fill color (swatch in the list); *Color Fills*
+   toggles the fills and *Opacity* fades the whole overlay.
 5. **Atlas Prediction (optional)** — before a texture exists, *Suggest Atlas*
    measures the selection, clusters islands/strips into reusable rectangle
    buckets (Lean / Balanced / High Fidelity economy presets, or a custom
