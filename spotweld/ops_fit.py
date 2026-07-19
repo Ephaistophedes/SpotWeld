@@ -17,6 +17,8 @@ MODE_ITEMS = (
     ('STRIP', "Strip", "Only fit quad strips; skip islands that aren't strips"),
 )
 
+_NO_RECTS_MSG = "No hotspot rectangles — import a .rect or run Suggest Atlas"
+
 
 class Unit:
     """One fittable patch (island or strip) with its ranked rect candidates.
@@ -30,6 +32,16 @@ class Unit:
 
 def get_inset_uv(st):
     return (st.inset_px / max(st.tex_width, 1), st.inset_px / max(st.tex_height, 1))
+
+
+def _tex_aspect(st):
+    return st.tex_height / max(st.tex_width, 1)
+
+
+def _rect_at(region, x, y, rects):
+    """Index of the rect under region-space pixel (x, y), or -1 for a miss."""
+    u, v = region.view2d.region_to_view(x, y)
+    return core_match.pick_rect_at(rects, u, v)
 
 
 def edit_mode_objects(context):
@@ -57,7 +69,7 @@ def build_units(context, st, mode, use_alt):
     use_uv_select = uv_select_mode(context)
     angle = st.angle_limit if st.use_angle else None
     scale = st.world_scale
-    tex_aspect = st.tex_height / max(st.tex_width, 1)
+    tex_aspect = _tex_aspect(st)
     preserve = st.preserve_uvs
     if preserve:
         # Keeping existing UVs implies island-style placement: strip
@@ -136,7 +148,7 @@ def apply_unit(u, cand, st, rng, inset_uv, reverse_strips=False):
             u.layout, u.uv_layer, cand.rect, inset_uv,
             rotated=cand.rotated, snap_tiles=st.snap_tiles,
             reverse_u=reverse_strips,
-            tex_aspect=st.tex_height / max(st.tex_width, 1))
+            tex_aspect=_tex_aspect(st))
         return
     rot_q = 1 if cand.swap else 0
     mirror = False
@@ -190,9 +202,8 @@ class SPOTWELD_OT_select_rect(bpy.types.Operator):
         if (not st.show_overlay or region is None
                 or region.type != 'WINDOW'):
             return {'PASS_THROUGH'}
-        u, v = region.view2d.region_to_view(
-            event.mouse_region_x, event.mouse_region_y)
-        idx = core_match.pick_rect_at(st.rects, u, v)
+        idx = _rect_at(region, event.mouse_region_x, event.mouse_region_y,
+                       st.rects)
         if idx < 0:
             return {'PASS_THROUGH'}
         st.active_rect_index = idx
@@ -221,8 +232,7 @@ class SPOTWELD_OT_pick_rect(bpy.types.Operator):
     def invoke(self, context, event):
         st = context.scene.spotweld
         if not len(st.rects):
-            self.report({'ERROR'},
-                        "No hotspot rectangles — import a .rect or run Suggest Atlas")
+            self.report({'ERROR'}, _NO_RECTS_MSG)
             return {'CANCELLED'}
         space = context.space_data
         region = context.region
@@ -230,9 +240,8 @@ class SPOTWELD_OT_pick_rect(bpy.types.Operator):
                 and region is not None and region.type == 'WINDOW'
                 and event.type == 'LEFTMOUSE'):
             # Toolbar-tool click straight on the UV editor: single-shot pick.
-            u, v = region.view2d.region_to_view(
-                event.mouse_region_x, event.mouse_region_y)
-            idx = core_match.pick_rect_at(st.rects, u, v)
+            idx = _rect_at(region, event.mouse_region_x,
+                           event.mouse_region_y, st.rects)
             if idx < 0:
                 self.report({'WARNING'}, "No rectangle under the cursor")
                 return {'CANCELLED'}
@@ -254,9 +263,9 @@ class SPOTWELD_OT_pick_rect(bpy.types.Operator):
             region = _image_editor_region(
                 context.window, event.mouse_x, event.mouse_y)
             if region is not None:
-                u, v = region.view2d.region_to_view(
-                    event.mouse_x - region.x, event.mouse_y - region.y)
-                idx = core_match.pick_rect_at(context.scene.spotweld.rects, u, v)
+                idx = _rect_at(region, event.mouse_x - region.x,
+                               event.mouse_y - region.y,
+                               context.scene.spotweld.rects)
                 if idx < 0:
                     self.report({'WARNING'},
                                 "No rectangle there — click a rectangle "
@@ -336,8 +345,7 @@ class SPOTWELD_OT_fit(bpy.types.Operator):
     def execute(self, context):
         st = context.scene.spotweld
         if not len(st.rects):
-            self.report({'ERROR'},
-                        "No hotspot rectangles — import a .rect or run Suggest Atlas")
+            self.report({'ERROR'}, _NO_RECTS_MSG)
             return {'CANCELLED'}
         units, meshes = build_units(context, st, self.mode, self.use_alt)
         if not units:
