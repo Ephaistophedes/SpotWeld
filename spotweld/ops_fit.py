@@ -130,7 +130,10 @@ def build_units(context, st, mode, use_alt):
     return units, meshes
 
 
-def apply_unit(u, cand, st, rng, inset_uv, reverse_strips=False):
+def apply_unit(u, cand, st, rng, inset_uv, reverse_strips=False,
+               extra_quarters=0):
+    """extra_quarters adds 90° turns inside the target rect (islands only —
+    strips are locked to their band orientation)."""
     if u.kind == 'STRIP':
         core_geometry.apply_rect_to_strip(
             u.layout, u.uv_layer, cand.rect, inset_uv,
@@ -138,7 +141,7 @@ def apply_unit(u, cand, st, rng, inset_uv, reverse_strips=False):
             reverse_u=reverse_strips,
             tex_aspect=st.tex_height / max(st.tex_width, 1))
         return
-    rot_q = 1 if cand.swap else 0
+    rot_q = (1 if cand.swap else 0) + extra_quarters
     mirror = False
     if not u.preserved:
         # random spins/mirrors would defeat Keep Existing UVs; the swap
@@ -153,6 +156,59 @@ def apply_unit(u, cand, st, rng, inset_uv, reverse_strips=False):
     core_geometry.apply_rect_to_island(
         u.faces, u.coords, u.bbox, u.uv_layer, cand.rect,
         inset_uv, rot_q, mirror, rectify=not u.preserved)
+
+
+class SPOTWELD_OT_turn_island(bpy.types.Operator):
+    bl_idname = "uv.spotweld_turn_island"
+    bl_label = "Turn In Rect"
+    bl_description = ("Rotate each selected island 90° in place, inside the "
+                      "region it currently occupies (its UV bounding box — "
+                      "the assigned rectangle after a fit)")
+    bl_options = {'REGISTER', 'UNDO'}
+
+    quarters: IntProperty(
+        name="Quarter Turns", default=1, min=-3, max=3,
+        description="Number of 90° turns (negative = counter-clockwise)")
+
+    @classmethod
+    def poll(cls, context):
+        return context.mode == 'EDIT_MESH'
+
+    def execute(self, context):
+        st = context.scene.spotweld
+        use_uv_select = uv_select_mode(context)
+        angle = st.angle_limit if st.use_angle else None
+        turned = 0
+        for obj in edit_mode_objects(context):
+            if obj is None or obj.type != 'MESH':
+                continue
+            me = obj.data
+            bm = bmesh.from_edit_mesh(me)
+            uv_layer = bm.loops.layers.uv.active
+            if uv_layer is None:
+                continue  # nothing mapped yet — nothing to turn
+            faces = core_geometry.get_target_faces(bm, uv_layer, use_uv_select)
+            if not faces:
+                continue
+            for island in core_geometry.split_islands(
+                    faces, st.use_seams, st.use_sharp, angle):
+                coords, bbox = core_geometry.island_uv_bounds(island, uv_layer)
+                if coords is None:
+                    continue  # degenerate layout — no region to turn in
+                region = core_match.Rect(bbox[0], bbox[1],
+                                         bbox[0] + bbox[2], bbox[1] + bbox[3])
+                core_geometry.apply_rect_to_island(
+                    island, coords, bbox, uv_layer, region,
+                    rot_quarters=self.quarters, rectify=False)
+                turned += 1
+            bmesh.update_edit_mesh(me)
+        if not turned:
+            self.report({'WARNING'},
+                        "Nothing to turn — select UV-mapped faces first")
+            return {'CANCELLED'}
+        draw.tag_redraw_editors(context)
+        self.report({'INFO'}, "Turned %d island(s)" % turned)
+        return {'FINISHED'}
 
 
 def _image_editor_region(window, mx, my):
@@ -371,4 +427,5 @@ class SPOTWELD_OT_fit(bpy.types.Operator):
         return {'FINISHED'}
 
 
-classes = (SPOTWELD_OT_fit, SPOTWELD_OT_pick_rect, SPOTWELD_OT_select_rect)
+classes = (SPOTWELD_OT_fit, SPOTWELD_OT_pick_rect, SPOTWELD_OT_select_rect,
+           SPOTWELD_OT_turn_island)

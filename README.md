@@ -37,8 +37,11 @@ Viewport and the UV/Image Editor.
    without re-unwrapping: each island's current UV layout is only moved and
    scaled into the rectangle (no strip re-tiling, no random spins).
 4. **Interactive Fit** (also on the toolbar): wheel cycles candidate
-   rectangles, **R** re-rolls, **LMB** confirms, **RMB/Esc** cancels and
-   restores the previous UVs.
+   rectangles, **R** re-rolls, **T** turns islands 90° inside their rect
+   (**Shift+T** turns back), **LMB** confirms, **RMB/Esc** cancels and
+   restores the previous UVs. The *Turn CW / Turn CCW* buttons do the same
+   turn-in-place on the current selection at any time — each island rotates
+   within the region it already occupies.
    **Assign Rect (Click)** maps the selection to a rectangle you click in the
    UV editor instead of the closest match — from the panel button (waits for
    the next click; view navigation and selection still work meanwhile) or the

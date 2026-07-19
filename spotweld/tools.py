@@ -12,7 +12,8 @@ class _SpotWeldToolBase:
     bl_context_mode = 'EDIT_MESH'
     bl_label = "SpotWeld Fit"
     bl_description = ("Click to hotspot-fit the selection interactively "
-                      "(wheel cycles rects, R re-rolls, RMB/Esc cancels)")
+                      "(wheel cycles rects, R re-rolls, T turns, "
+                      "RMB/Esc cancels)")
     bl_icon = "ops.generic.select_box"
     bl_widget = None
     bl_keymap = (

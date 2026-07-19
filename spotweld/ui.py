@@ -235,6 +235,13 @@ class _SpotWeldPanelMixin:
         op.mode = 'ISLAND'
         op = row.operator("uv.spotweld_fit", text="Strips")
         op.mode = 'STRIP'
+        row = col.row(align=True)
+        op = row.operator("uv.spotweld_turn_island", text="Turn CCW",
+                          icon='LOOP_BACK')
+        op.quarters = -1
+        op = row.operator("uv.spotweld_turn_island", text="Turn CW",
+                          icon='LOOP_FORWARDS')
+        op.quarters = 1
         box.operator("uv.spotweld_pick_rect", icon='EYEDROPPER')
         box.operator("uv.spotweld_fit_interactive", icon='RESTRICT_SELECT_OFF')
         box.operator("mesh.spotweld_grow_strip", icon='SNAP_EDGE')

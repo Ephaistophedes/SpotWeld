@@ -80,7 +80,8 @@ class SPOTWELD_OT_fit_interactive(bpy.types.Operator):
     bl_idname = "uv.spotweld_fit_interactive"
     bl_label = "SpotWeld Interactive Fit"
     bl_description = ("Fit interactively: mouse wheel cycles candidate "
-                      "rectangles, R re-rolls variations, LMB confirms, "
+                      "rectangles, R re-rolls variations, T turns islands "
+                      "inside their rect (Shift+T back), LMB confirms, "
                       "RMB/Esc cancels and restores UVs")
     bl_options = {'REGISTER', 'UNDO'}
 
@@ -113,6 +114,7 @@ class SPOTWELD_OT_fit_interactive(bpy.types.Operator):
                 (u.uv_layer, core_geometry.backup_uvs(u.faces, u.uv_layer)))
         self._idx = 0
         self._variation = 0
+        self._turn = 0
 
         draw.state.strip_paths = [
             [tuple(u.obj.matrix_world @ f.calc_center_median())
@@ -124,6 +126,7 @@ class SPOTWELD_OT_fit_interactive(bpy.types.Operator):
         if context.area:
             context.area.header_text_set(
                 "SpotWeld: Wheel = cycle rects | R = re-roll | "
+                "T = turn in rect (Shift+T back) | "
                 "LMB = confirm | RMB/Esc = cancel")
         return {'RUNNING_MODAL'}
 
@@ -134,7 +137,8 @@ class SPOTWELD_OT_fit_interactive(bpy.types.Operator):
         for k, u in enumerate(self._units):
             cand = u.cands[self._idx % len(u.cands)]
             rng = random.Random("spotweld-modal:%d:%d" % (self._variation, k))
-            ops_fit.apply_unit(u, cand, st, rng, inset_uv)
+            ops_fit.apply_unit(u, cand, st, rng, inset_uv,
+                               extra_quarters=self._turn)
             used.add(cand.index)
         for me, _bm in self._meshes:
             bmesh.update_edit_mesh(me, loop_triangles=False, destructive=False)
@@ -182,6 +186,10 @@ class SPOTWELD_OT_fit_interactive(bpy.types.Operator):
             return {'RUNNING_MODAL'}
         if event.type == 'R' and event.value == 'PRESS':
             self._variation += 1
+            self._apply(context)
+            return {'RUNNING_MODAL'}
+        if event.type == 'T' and event.value == 'PRESS':
+            self._turn = (self._turn + (-1 if event.shift else 1)) % 4
             self._apply(context)
             return {'RUNNING_MODAL'}
         if event.type == 'LEFTMOUSE' and event.value == 'PRESS':
