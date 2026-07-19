@@ -68,13 +68,7 @@ def test_size_and_pack():
         if full:
             assert x == 0 and w == tex_w, "strips must span full width"
         boxes.append((x, y, x + w, y + h))
-    # no pairwise overlap
-    for i in range(len(boxes)):
-        for j in range(i + 1, len(boxes)):
-            a, b2 = boxes[i], boxes[j]
-            overlap = not (a[2] <= b2[0] or b2[2] <= a[0]
-                           or a[3] <= b2[1] or b2[3] <= a[1])
-            assert not overlap, "rects %d and %d overlap: %s %s" % (i, j, a, b2)
+    _assert_no_overlap(boxes)
     assert used_h == max(y1 for _x0, _y0, _x1, y1 in boxes)
 
 

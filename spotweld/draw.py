@@ -39,10 +39,11 @@ HIGHLIGHT_LINE_WIDTH = 3.0  # clamps to 1 where wide lines are unsupported
 COL_STRIP_PATH = (0.25, 1.00, 0.55, 0.90)
 
 
-def palette_color(index, offset=0.0, sat=0.55, val=0.95):
+def palette_color(index, offset=0.0, sat=0.55, val=0.95, step=0.61803398875):
     """Distinct, stable RGB for rect `index` (golden-ratio hue walk).
-    `offset` rotates the whole palette; sat/val allow per-rect jitter."""
-    hue = (offset + index * 0.61803398875) % 1.0
+    `offset` rotates the whole palette; sat/val allow per-rect jitter;
+    `step` sets the per-index hue increment."""
+    hue = (offset + index * step) % 1.0
     return colorsys.hsv_to_rgb(hue, sat, val)
 
 
@@ -93,14 +94,14 @@ def _draw_uv_overlay():
         region = ctx.region
         if region is None:
             return
+        opacity = st.overlay_opacity
+        if opacity <= 0.0:
+            return
         v2r = region.view2d.view_to_region
         ox, oy = v2r(0.0, 0.0, clip=False)
         sx = v2r(1.0, 0.0, clip=False)[0] - ox
         sy = v2r(0.0, 1.0, clip=False)[1] - oy
 
-        opacity = st.overlay_opacity
-        if opacity <= 0.0:
-            return
         shader = gpu.shader.from_builtin('UNIFORM_COLOR')
         items = _rect_batches(shader, st)
         gpu.state.blend_set('ALPHA')
@@ -110,28 +111,29 @@ def _draw_uv_overlay():
             gpu.matrix.scale((sx, sy))
             for i, r in enumerate(st.rects):
                 fill, outline = items[i]
+                is_hl = i in state.highlight_indices
                 if st.overlay_fill and r.color[3] > 0.0:
                     shader.uniform_float(
                         "color", (r.color[0], r.color[1], r.color[2],
                                   r.color[3] * opacity))
                     fill.draw(shader)
-                if i in state.highlight_indices:
+                if is_hl:
                     shader.uniform_float(
                         "color", COL_HIGHLIGHT_FILL[:3]
                         + (COL_HIGHLIGHT_FILL[3] * opacity,))
                     fill.draw(shader)
                 col = _rect_color(r, i, st.active_rect_index)
                 shader.uniform_float("color", col[:3] + (col[3] * opacity,))
-                if i in state.highlight_indices:
+                if is_hl:
                     gpu.state.line_width_set(HIGHLIGHT_LINE_WIDTH)
                     outline.draw(shader)
                     gpu.state.line_width_set(1.0)
                 else:
                     outline.draw(shader)
+        blf.size(0, 10)
         for i, r in enumerate(st.rects):
             if (r.umax - r.umin) * sx > 26.0:
                 col = _rect_color(r, i, st.active_rect_index)
-                blf.size(0, 10)
                 blf.color(0, col[0], col[1], col[2], opacity)
                 blf.position(0, ox + r.umin * sx + 4.0,
                              oy + r.vmax * sy - 13.0, 0.0)

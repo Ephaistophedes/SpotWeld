@@ -188,9 +188,7 @@ class SPOTWELD_OT_fit_interactive(bpy.types.Operator):
             self._cleanup(context)
             return {'FINISHED'}
         if event.type in ('RIGHTMOUSE', 'ESC') and event.value == 'PRESS':
-            self._restore()
-            draw.state.highlight_indices = set()
-            self._cleanup(context)
+            self.cancel(context)
             return {'CANCELLED'}
         return {'RUNNING_MODAL'}
 

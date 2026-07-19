@@ -5,14 +5,12 @@ fill the scene rect list, and render a labeled preview texture.
 
 Never touches real mesh UVs — advisory only, re-runnable any time."""
 
-import colorsys
-
 import bmesh
 import bpy
 from bpy.props import BoolProperty
 from mathutils import Matrix
 
-from . import core_atlas_suggest, core_geometry, core_match, ops_fit, ui
+from . import core_atlas_suggest, core_geometry, core_match, draw, ops_fit, ui
 from .ops_rect_io import rects_to_scene
 
 PREVIEW_IMAGE_NAME = "SpotWeld_AtlasPreview"
@@ -44,9 +42,8 @@ def _extract_patches(bm, faces, mw, st):
 
 
 def _bucket_color(i):
-    h = (i * 0.381966) % 1.0  # golden-angle hue walk
-    r, g, b = colorsys.hsv_to_rgb(h, 0.55, 0.82)
-    return (r, g, b, 1.0)
+    # golden-angle hue walk (complementary step to draw's rect palette)
+    return draw.palette_color(i, sat=0.55, val=0.82, step=0.381966) + (1.0,)
 
 
 def _preview_gpu(tex_w, tex_h, placements):
@@ -72,7 +69,7 @@ def _preview_gpu(tex_w, tex_h, placements):
                     col = _bucket_color(i)
                     pts = ((x, y), (x + w, y), (x + w, y + h), (x, y + h))
                     batch = batch_for_shader(shader, 'TRIS', {"pos": pts},
-                                             indices=((0, 1, 2), (0, 2, 3)))
+                                             indices=draw.QUAD_INDICES)
                     shader.uniform_float("color", col)
                     batch.draw(shader)
                     outline = batch_for_shader(shader, 'LINE_STRIP',
@@ -220,23 +217,18 @@ class SPOTWELD_OT_suggest_atlas(bpy.types.Operator):
 
         usage = 100.0 * min(used_h, tex_h) / max(tex_h, 1)
         if st.use_texel_density:
-            msg = ("%d patches -> %d rectangles, ~%d%% of a %dx%d atlas, "
-                   "world scale set to %.3g"
-                   % (len(patches), len(buckets), round(usage), tex_w, tex_h,
-                      st.world_scale))
+            detail = "~%d%% of a %dx%d atlas" % (round(usage), tex_w, tex_h)
+            overflow_hint = ("raise texture size or lower texel density")
         else:
             n_fill = sum(1 for p in placements if p[0] is None)
-            msg = ("%d patches -> %d rectangles + %d fillers, full %dx%d "
-                   "coverage, world scale set to %.3g"
-                   % (len(patches), len(buckets), n_fill, tex_w, tex_h,
-                      st.world_scale))
+            detail = ("plus %d fillers for full %dx%d coverage"
+                      % (n_fill, tex_w, tex_h))
+            overflow_hint = ("too many buckets even at minimum sizes; "
+                             "raise texture size or lower the tolerance")
+        msg = ("%d patches -> %d rectangles, %s, world scale set to %.3g"
+               % (len(patches), len(buckets), detail, st.world_scale))
         if used_h > tex_h:
-            if st.use_texel_density:
-                msg += " — OVERFLOW: raise texture size or lower texel density"
-            else:
-                msg += (" — OVERFLOW: too many buckets even at minimum "
-                        "sizes; raise texture size or lower the tolerance")
-            self.report({'WARNING'}, msg)
+            self.report({'WARNING'}, msg + " — OVERFLOW: " + overflow_hint)
             return {'FINISHED'}
         if clamped:
             self.report({'WARNING'}, msg + " (some patches were larger than "

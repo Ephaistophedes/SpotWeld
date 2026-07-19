@@ -165,8 +165,9 @@ def pack_full_atlas(buckets, tex_w, tex_h, min_px=8):
     row) and full-width trim bands — bucket None marks fillers. The result
     covers the whole texture with no overlaps and no padding.
 
-    Returns (placements, used_h, px_per_world) in shelf_pack's tuple shape;
-    used_h > tex_h signals overflow even at minimum sizes (fillers omitted)."""
+    Returns (placements, used_h, px_per_world) — shelf_pack's (placements,
+    used_h) plus the derived scale. used_h > tex_h signals overflow even at
+    minimum sizes (fillers omitted)."""
     strips = [b for b in buckets if b.kind == "STRIP"]
     islands = [b for b in buckets if b.kind == "ISLAND"]
 
@@ -196,16 +197,11 @@ def pack_full_atlas(buckets, tex_w, tex_h, min_px=8):
         return (sum(h for _b, h in band_hs)
                 + sum(r[0] for r in rows_of(cells)))
 
-    # Largest scale whose layout still fits the texture height. used_height
-    # is stepwise (po2 snapping) but non-decreasing overall; the search keeps
-    # `lo` on the last known-fitting scale.
-    dims = [b.short for b in strips]
-    for b in islands:
-        dims += [b.long, b.short]
-    smallest = max(min(dims), 1e-9)
-    lo = 1e-9  # everything clamps to min_px
-    if used_height(lo) > tex_h:
-        band_hs, cells = sizes_at(lo)
+    def build(s, fillers):
+        """Emit placements at scale `s`: strip bands, then equal-height cell
+        rows. With `fillers`, the exact remainder of each row and the trailing
+        vertical span become filler placements (bucket None)."""
+        band_hs, cells = sizes_at(s)
         placements = []
         y = 0
         for b, h in band_hs:
@@ -216,8 +212,29 @@ def pack_full_atlas(buckets, tex_w, tex_h, min_px=8):
             for b, w, h in row_cells:
                 placements.append((b, w, h, False, x, y))
                 x += w
+            if fillers:
+                for piece in _pow2_pieces(tex_w - x):
+                    placements.append((None, piece, row_h, False, x, y))
+                    x += piece
             y += row_h
-        return placements, y, lo
+        used = y
+        if fillers:
+            for piece in _pow2_pieces(tex_h - y):
+                placements.append((None, tex_w, piece, True, 0, y))
+                y += piece
+        return placements, used
+
+    # Largest scale whose layout still fits the texture height. used_height
+    # is stepwise (po2 snapping) but non-decreasing overall; the search keeps
+    # `lo` on the last known-fitting scale.
+    dims = [b.short for b in strips]
+    for b in islands:
+        dims += [b.long, b.short]
+    smallest = max(min(dims), 1e-9)
+    lo = 1e-9  # everything clamps to min_px
+    if used_height(lo) > tex_h:
+        placements, used = build(lo, fillers=False)
+        return placements, used, lo
     hi = 2.0 * max(tex_w, tex_h) / smallest  # smallest patch spans the atlas
     for _ in range(64):
         mid = 0.5 * (lo + hi)
@@ -226,23 +243,5 @@ def pack_full_atlas(buckets, tex_w, tex_h, min_px=8):
         else:
             hi = mid
 
-    band_hs, cells = sizes_at(lo)
-    placements = []
-    y = 0
-    for b, h in band_hs:
-        placements.append((b, tex_w, h, True, 0, y))
-        y += h
-    for row_h, row_cells, used_w in rows_of(cells):
-        x = 0
-        for b, w, h in row_cells:
-            placements.append((b, w, h, False, x, y))
-            x += w
-        for piece in _pow2_pieces(tex_w - x):
-            placements.append((None, piece, row_h, False, x, y))
-            x += piece
-        y += row_h
-    used = y
-    for piece in _pow2_pieces(tex_h - y):
-        placements.append((None, tex_w, piece, True, 0, y))
-        y += piece
+    placements, used = build(lo, fillers=True)
     return placements, used, lo

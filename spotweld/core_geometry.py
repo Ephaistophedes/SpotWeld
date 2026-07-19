@@ -24,10 +24,9 @@ def get_target_faces(bm, uv_layer, use_uv_select=False):
     return faces
 
 
-def split_islands(faces, use_seams=True, use_sharp=True, angle_limit=None,
-                  use_material=False):
+def split_islands(faces, use_seams=True, use_sharp=True, angle_limit=None):
     """Group faces into islands connected across passable edges. Seams, sharp
-    edges, over-angle edges, and material boundaries act as island borders."""
+    edges, and over-angle edges act as island borders."""
     face_set = set(faces)
 
     def passable(e):
@@ -39,8 +38,6 @@ def split_islands(faces, use_seams=True, use_sharp=True, angle_limit=None,
         if use_sharp and not e.smooth:
             return False
         if angle_limit is not None and e.calc_face_angle(math.pi) > angle_limit:
-            return False
-        if use_material and linked[0].material_index != linked[1].material_index:
             return False
         return True
 
